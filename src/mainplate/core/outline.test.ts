@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { polar as polarPoint } from "./geometry"
-import { circleOutline, rectOutline } from "./outline"
+import { circleOutline, rectOutline, resolveOutline } from "./outline"
 
 const closeTo = (a: number, b: number) => expect(a).toBeCloseTo(b, 9)
 
@@ -285,5 +285,95 @@ describe("rectOutline — path", () => {
     expect(rectOutline({ ratio: 1, radius: 20 }).path(10)).toMatchInlineSnapshot(
       `"M -80 -90 H 80 A 10 10 0 0 1 90 -80 V 80 A 10 10 0 0 1 80 90 H -80 A 10 10 0 0 1 -90 80 V -80 A 10 10 0 0 1 -80 -90 Z"`,
     )
+  })
+})
+
+describe("resolveOutline", () => {
+  it("defaults to a circle when given nothing", () => {
+    expect(resolveOutline().bbox()).toEqual(circleOutline().bbox())
+  })
+
+  it("accepts the string names", () => {
+    expect(resolveOutline("circle").bbox()).toEqual(circleOutline().bbox())
+    expect(resolveOutline("rect").bbox()).toEqual(rectOutline().bbox())
+  })
+
+  it("accepts the kind descriptors without params", () => {
+    expect(resolveOutline({ kind: "circle" }).bbox()).toEqual(circleOutline().bbox())
+    expect(resolveOutline({ kind: "rect" }).path()).toBe(rectOutline().path())
+  })
+
+  it("passes ratio and radius through to the factory", () => {
+    const viaSpec = resolveOutline({ kind: "rect", ratio: 0.78, radius: 12 })
+    const viaFactory = rectOutline({ ratio: 0.78, radius: 12 })
+    expect(viaSpec.bbox()).toEqual(viaFactory.bbox())
+    expect(viaSpec.path()).toBe(viaFactory.path())
+    expect(viaSpec.path(8)).toBe(viaFactory.path(8))
+    expect(viaSpec.pointAt(37)).toEqual(viaFactory.pointAt(37))
+    expect(viaSpec.normalAt(37)).toEqual(viaFactory.normalAt(37))
+  })
+
+  it("returns an existing Outline unchanged", () => {
+    const custom = rectOutline({ ratio: 2 })
+    expect(resolveOutline(custom)).toBe(custom)
+  })
+
+  it("accepts a hand-rolled object that satisfies the Outline shape", () => {
+    const stub = circleOutline()
+    expect(resolveOutline({ ...stub })).not.toBe(stub)
+    expect(resolveOutline({ ...stub }).bbox()).toEqual(stub.bbox())
+  })
+
+  it("throws a mainplate-branded, actionable error on garbage", () => {
+    // @ts-expect-error — exercising the runtime guard a JS consumer can trip.
+    expect(() => resolveOutline("circel")).toThrow(/mainplate: unrecognised outline/)
+    // @ts-expect-error — a malformed descriptor.
+    expect(() => resolveOutline({ kind: "hexagon" })).toThrow(/descriptor such as/)
+    // @ts-expect-error — the error must point at the server-component route.
+    expect(() => resolveOutline({ ratio: 0.78 })).toThrow(/Server Component/)
+  })
+
+  it("rejects a partial object rather than letting it fail later as a TypeError", () => {
+    // <Mainplate> calls bbox() first, so a pointAt-only object used to pass the
+    // structural check and then blow up as a bare TypeError deep inside render.
+    let caught: unknown
+    try {
+      // @ts-expect-error — a JS consumer can hand over a half-built outline.
+      resolveOutline({ pointAt: () => ({ x: 0, y: 0 }) })
+    } catch (e) {
+      caught = e
+    }
+    expect(caught).toBeInstanceOf(Error)
+    expect(caught).not.toBeInstanceOf(TypeError)
+    expect((caught as Error).message).toMatch(/mainplate: unrecognised outline/)
+    expect((caught as Error).message).toMatch(/object with keys \[pointAt\]/)
+  })
+
+  it("requires all four methods, not just the first", () => {
+    const full = circleOutline()
+    for (const missing of ["pointAt", "normalAt", "bbox", "path"] as const) {
+      const partial: Record<string, unknown> = { ...full }
+      delete partial[missing]
+      // @ts-expect-error — exercising the runtime guard.
+      expect(() => resolveOutline(partial)).toThrow(/mainplate: unrecognised outline/)
+    }
+    expect(resolveOutline({ ...full }).bbox()).toEqual(full.bbox())
+  })
+
+  it("logs and falls back to a circle in production instead of throwing", () => {
+    vi.stubEnv("NODE_ENV", "production")
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {})
+    try {
+      // @ts-expect-error — malformed descriptor from a JS consumer.
+      const out = resolveOutline({ kind: "rekt" })
+      expect(out.bbox()).toEqual(circleOutline().bbox())
+      expect(spy).toHaveBeenCalledTimes(1)
+      expect(spy.mock.calls[0]?.[0]).toMatch(/mainplate: unrecognised outline/)
+      expect(spy.mock.calls[0]?.[0]).toMatch(/"kind":"rekt"/)
+      expect(spy.mock.calls[0]?.[0]).toMatch(/Falling back to the default circle/)
+    } finally {
+      spy.mockRestore()
+      vi.unstubAllEnvs()
+    }
   })
 })

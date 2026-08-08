@@ -49,6 +49,99 @@ export function circleOutline(): Outline {
   }
 }
 
+/**
+ * An outline, or plain data describing one.
+ *
+ * `Outline` is an object of closures, and functions cannot cross the React
+ * Server Component boundary: `<Mainplate outline={rectOutline(...)}>` written
+ * in a server component throws "Functions cannot be passed directly to Client
+ * Components" before any mainplate code runs. `<Mainplate>` must stay a client
+ * component — React context is unsupported in server components — so the fix is
+ * to let the *description* cross the boundary instead of the behaviour, and
+ * build the real `Outline` on the client.
+ *
+ * Hence the plain-data forms. Use `"circle"`, `"rect"`, or a descriptor like
+ * `{ kind: "rect", ratio: 0.78 }` from a server component; pass a factory-built
+ * `Outline` when you are already inside `"use client"` or need a custom shape.
+ */
+export type OutlineSpec =
+  | "circle"
+  | "rect"
+  | { kind: "circle" }
+  | { kind: "rect"; ratio?: number; radius?: DialUnits }
+  | Outline
+
+/**
+ * Structural check, mirroring `isSource`: every method must be callable.
+ *
+ * All four, not just `pointAt`. A partial object would otherwise pass as an
+ * `Outline` and fail later inside `<Mainplate>` — which calls `bbox()` first —
+ * as a bare `TypeError`, losing the branded error this module exists to give.
+ */
+function isOutline(v: unknown): v is Outline {
+  if (typeof v !== "object" || v === null) return false
+  const o = v as Outline
+  return (
+    typeof o.pointAt === "function" &&
+    typeof o.normalAt === "function" &&
+    typeof o.bbox === "function" &&
+    typeof o.path === "function"
+  )
+}
+
+/**
+ * A short, safe description of bad input.
+ *
+ * `JSON.stringify` drops functions, so a half-built `Outline` would otherwise
+ * be reported as `{}` — exactly the case worth naming. Fall back to the keys.
+ */
+function describeSpec(v: unknown): string {
+  if (typeof v !== "object" || v === null) return JSON.stringify(v) ?? String(v)
+  const json = JSON.stringify(v)
+  const keys = Object.keys(v)
+  return json === "{}" && keys.length > 0 ? `object with keys [${keys.join(", ")}]` : json
+}
+
+/**
+ * Normalise an {@link OutlineSpec} into a real `Outline`.
+ *
+ * `undefined` yields the default circle. An `Outline` passes straight through,
+ * so this is safe to call on an already-resolved value.
+ *
+ * On unrecognised input this throws in development. In production it logs and
+ * falls back to the default circle, so one malformed descriptor degrades a
+ * single face rather than taking down the route — but never in silence.
+ */
+export function resolveOutline(spec?: OutlineSpec): Outline {
+  if (spec === undefined || spec === "circle") return circleOutline()
+  if (spec === "rect") return rectOutline()
+
+  if (typeof spec === "object" && spec !== null && "kind" in spec) {
+    if (spec.kind === "circle") return circleOutline()
+    if (spec.kind === "rect") return rectOutline({ ratio: spec.ratio, radius: spec.radius })
+  }
+
+  if (isOutline(spec)) return spec
+
+  const received = `mainplate: unrecognised outline ${describeSpec(spec)}.`
+
+  if (process.env.NODE_ENV !== "production") {
+    throw new Error(
+      `${received} Pass "circle", "rect", a descriptor such as ` +
+        `{ kind: "rect", ratio: 0.78, radius: 12 }, or an Outline from circleOutline() / ` +
+        `rectOutline() with all four methods. Note that an Outline is made of functions, so ` +
+        `it cannot be passed from a React Server Component — use the descriptor form there, ` +
+        `or build the Outline inside a "use client" component.`,
+    )
+  }
+
+  // Deliberately outside the guard above: degrading to a circle is the right
+  // call in production, but doing it silently is the failure class we are
+  // meant to prevent. One line, one face, and it reaches error tracking.
+  console.error(`${received} Falling back to the default circle.`)
+  return circleOutline()
+}
+
 type RectDims = { hw: DialUnits; hh: DialUnits; rr: DialUnits }
 
 // Guards float noise when classifying which edge or corner a traced point sits on.
