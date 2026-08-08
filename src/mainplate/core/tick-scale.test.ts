@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type { Scale } from "./geometry"
-import { populate } from "./tick-scale"
+import { EVALUABLE_PROPS, populate, resolveTicks, type TickContext } from "./tick-scale"
 
 const fullCircle: Scale = { min: 0, max: 60, startAngle: 0, sweepAngle: 360 }
 const gauge: Scale = { min: 0, max: 220, startAngle: -135, sweepAngle: 270 }
@@ -138,5 +138,221 @@ describe("populate — input exclusivity", () => {
   })
   it("throws when none is given", () => {
     expect(() => populate({}, fullCircle)).toThrow(/exactly one of/i)
+  })
+})
+
+describe("resolveTicks — skip, array form", () => {
+  it("omits the listed domain values", () => {
+    const out = resolveTicks({ count: 4, skip: [15, 45] }, fullCircle)
+    expect(values(out)).toEqual([0, 30])
+  })
+
+  it("matches within epsilon, where float equality would fail", () => {
+    const fine: Scale = { min: 0, max: 1, startAngle: 0, sweepAngle: 360 }
+    const out = resolveTicks({ tiers: [{ every: 0.1 }], skip: [0.3] }, fine)
+    expect(values(out).some((v) => Math.abs(v - 0.3) < 1e-9)).toBe(false)
+    expect(out).toHaveLength(9)
+  })
+})
+
+describe("resolveTicks — skip, predicate form", () => {
+  it("omits by index", () => {
+    const out = resolveTicks({ count: 8, skip: ({ index }) => index % 4 === 3 }, fullCircle)
+    expect(values(out)).toEqual([0, 7.5, 15, 30, 37.5, 45])
+  })
+
+  it("receives the computed angle", () => {
+    const seen: number[] = []
+    resolveTicks(
+      {
+        count: 4,
+        skip: ({ angle }) => {
+          seen.push(angle)
+          return false
+        },
+      },
+      fullCircle,
+    )
+    expect(seen).toEqual([0, 90, 180, 270])
+  })
+
+  it("honours a per-item `at` override when computing the angle", () => {
+    const seen: number[] = []
+    resolveTicks(
+      {
+        ticks: [{ value: 0, at: 42 }],
+        skip: ({ angle }) => {
+          seen.push(angle)
+          return false
+        },
+      },
+      fullCircle,
+    )
+    expect(seen).toEqual([42])
+  })
+
+  it("keeps within-tier indices, holes included, after a skip", () => {
+    const out = resolveTicks({ count: 4, skip: [15] }, fullCircle)
+    expect(out.map((t) => t.index)).toEqual([0, 2, 3])
+  })
+})
+
+describe("resolveTicks — tier merge", () => {
+  it("keeps only the later tier at a shared position", () => {
+    const out = resolveTicks(
+      {
+        tiers: [
+          { every: 15, length: 4 },
+          { every: 30, length: 10 },
+        ],
+      },
+      fullCircle,
+    )
+    expect(values(out)).toEqual([0, 15, 30, 45])
+    expect(out.find((t) => t.value === 0)?.length).toBe(10)
+    expect(out.find((t) => t.value === 15)?.length).toBe(4)
+  })
+
+  it("merges across coprime steps without double-drawing", () => {
+    const out = resolveTicks({ tiers: [{ every: 4 }, { every: 6 }] }, fullCircle)
+    const seen = new Set(values(out))
+    expect(seen.size).toBe(out.length)
+    expect(seen.has(12)).toBe(true)
+  })
+
+  it("merges values that differ only by float drift", () => {
+    const fine: Scale = { min: 0, max: 1, startAngle: 0, sweepAngle: 360 }
+    const out = resolveTicks({ tiers: [{ every: 0.1 }, { every: 0.3 }] }, fine)
+    const near = values(out).filter((v) => Math.abs(v - 0.3) < 1e-9)
+    expect(near).toHaveLength(1)
+  })
+
+  it("returns marks in ascending value order", () => {
+    const out = resolveTicks({ tiers: [{ every: 30 }, { every: 20 }] }, fullCircle)
+    expect(values(out)).toEqual([0, 20, 30, 40])
+  })
+})
+
+describe("resolveTicks — skip placement", () => {
+  it("per-tier skip lets the tier below show through", () => {
+    const out = resolveTicks(
+      {
+        tiers: [
+          { every: 15, length: 4 },
+          { every: 30, length: 10, skip: [0] },
+        ],
+      },
+      fullCircle,
+    )
+    // The major at 0 is gone, so the minor beneath it renders instead.
+    expect(out.find((t) => t.value === 0)?.length).toBe(4)
+  })
+
+  it("top-level skip clears the position outright", () => {
+    const out = resolveTicks(
+      {
+        tiers: [
+          { every: 15, length: 4 },
+          { every: 30, length: 10 },
+        ],
+        skip: [0],
+      },
+      fullCircle,
+    )
+    expect(out.find((t) => t.value === 0)).toBeUndefined()
+  })
+
+  it("top-level predicate skip sees the merged winner, not the pre-merge tiers", () => {
+    const out = resolveTicks(
+      { tiers: [{ every: 15 }, { every: 30 }], skip: ({ tier }) => tier === 1 },
+      fullCircle,
+    )
+    // 0 and 30 belong to tier 1 after the merge, so they are cleared outright;
+    // ran before the merge, tier 0 would show through and all four would remain.
+    expect(values(out)).toEqual([15, 45])
+  })
+
+  it("does not leak a per-tier skip onto the resolved ticks", () => {
+    const out = resolveTicks({ tiers: [{ every: 30, skip: () => false }] }, fullCircle)
+    expect(out[0]?.skip).toBeUndefined()
+  })
+})
+
+describe("resolveTicks — prop resolution", () => {
+  it("lets a per-item value beat a tier prop", () => {
+    const out = resolveTicks({ ticks: [{ value: 0, length: 99 }], length: 4 }, fullCircle)
+    expect(out[0]?.length).toBe(99)
+  })
+
+  it("lets a tier prop beat a top-level prop", () => {
+    const out = resolveTicks({ tiers: [{ every: 30, length: 7 }], length: 4 }, fullCircle)
+    expect(out[0]?.length).toBe(7)
+  })
+
+  it("falls back to the top-level prop", () => {
+    const out = resolveTicks({ count: 2, length: 4 }, fullCircle)
+    expect(out[0]?.length).toBe(4)
+  })
+
+  it("evaluates a function-valued prop per mark", () => {
+    const out = resolveTicks({ count: 3, length: ({ t }: TickContext) => 3 + t * 9 }, gauge)
+    expect(out.map((x) => x.length)).toEqual([3, 7.5, 12])
+  })
+
+  it("evaluates a function-valued tier prop even with no top-level props", () => {
+    const out = resolveTicks(
+      { tiers: [{ every: 30, length: ({ t }: TickContext) => 2 + t * 2 }] },
+      fullCircle,
+    )
+    expect(out.map((x) => x.length)).toEqual([2, 3])
+  })
+
+  it("never invokes render callbacks or event handlers", () => {
+    let called = false
+    const arm = () => {
+      called = true
+    }
+    const out = resolveTicks(
+      {
+        ticks: [{ value: 0, onClick: arm }],
+        renderItem: arm,
+        onPointerDown: arm,
+        children: arm,
+      },
+      fullCircle,
+    )
+    expect(called).toBe(false)
+    // Component-level callbacks are not per-mark props and are not filled in.
+    expect(out[0]?.renderItem).toBeUndefined()
+    // A per-item callback passes through untouched for the renderer to use.
+    expect(out[0]?.onClick).toBe(arm)
+  })
+
+  it("leaves a callback ref alone — not invoked, not replaced", () => {
+    // `ref` matches no callback naming pattern, which is why the resolver must
+    // work from an allowlist: an unrecognised function is left alone by
+    // default, not invoked by default.
+    let called = false
+    const ref = () => {
+      called = true
+    }
+    const out = resolveTicks({ ticks: [{ value: 0, ref }], ref }, fullCircle)
+    expect(called).toBe(false)
+    expect(out[0]?.ref).toBe(ref)
+  })
+
+  it("does not copy unrecognised top-level keys onto the marks", () => {
+    const out = resolveTicks({ count: 2, className: "dial-ticks" }, fullCircle)
+    expect(out[0]?.className).toBeUndefined()
+  })
+
+  it("fills exactly the allowlisted props from the top level", () => {
+    const out = resolveTicks(
+      { count: 1, length: 6, width: 1, offset: 2, inset: 3, r: 80, fill: "red" },
+      fullCircle,
+    )
+    for (const key of EVALUABLE_PROPS) {
+      expect(out[0]?.[key], key).toBeDefined()
+    }
   })
 })
