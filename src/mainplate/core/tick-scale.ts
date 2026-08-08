@@ -50,6 +50,15 @@ export type PopulateInput = {
 const CLOSED_ARC_EPSILON = 1e-9
 
 /**
+ * Most marks one tier may generate. A chronograph's finest track is a fifth of
+ * a second over sixty — three hundred marks — so this is two orders of
+ * magnitude of headroom for any dial a person would actually draw, and the only
+ * way past it is arithmetic nobody intended: `every: 1e-9` over a 0–60 domain
+ * asks for sixty billion marks and locks the tab before anything renders.
+ */
+const MAX_MARKS_PER_TIER = 10_000
+
+/**
  * Stages 1 and 2 of the pipeline: build the mark population and bound it.
  *
  * `count`, `ticks`, and `tiers` are exactly-one-of. Combining them would need a
@@ -58,8 +67,10 @@ const CLOSED_ARC_EPSILON = 1e-9
 export function populate(input: PopulateInput, scale: Scale): ResolvedTick[] {
   const sources = [input.count !== undefined, input.ticks !== undefined, input.tiers !== undefined]
   if (sources.filter(Boolean).length !== 1) {
+    // Not "<Ticks>": `populate` is exported and callable directly, so the
+    // message has to name the input it received, not one of its callers.
     throw new Error(
-      "<Ticks> needs exactly one of `count`, `ticks`, or `tiers`. " +
+      "mainplate: a tick population needs exactly one of `count`, `ticks`, or `tiers`. " +
         `Received ${sources.filter(Boolean).length}.`,
     )
   }
@@ -105,8 +116,31 @@ export function populate(input: PopulateInput, scale: Scale): ResolvedTick[] {
     // given k; a running sum drifts, and two tiers that should land on the same
     // position would then differ in the last bits and fail to merge.
     const lastStep = Math.floor((span + eps) / every)
+
+    // Checked before the loop, not inside it: the point is never to start.
+    const requested = lastStep + 1
+    if (requested > MAX_MARKS_PER_TIER) {
+      const received =
+        `mainplate: tier ${tierIndex} with \`every: ${every}\` over a domain span of ${span} ` +
+        `would generate ${requested} marks, past the ceiling of ${MAX_MARKS_PER_TIER}.`
+
+      if (process.env.NODE_ENV !== "production") {
+        throw new Error(
+          `${received} That is almost always an \`every\` in the wrong units — a step in ` +
+            `thousandths where the domain is counted in ones. Raise \`every\`, or narrow the ` +
+            `tier's \`from\`/\`to\`.`,
+        )
+      }
+
+      // As elsewhere: degrade rather than take down the page. Truncating draws
+      // a wrong dial, but a wrong dial can be seen and reported; a locked tab
+      // cannot.
+      console.error(`${received} Truncating to ${MAX_MARKS_PER_TIER} marks.`)
+    }
+
+    const steps = Math.min(lastStep, MAX_MARKS_PER_TIER - 1)
     const items: TickItem[] = []
-    for (let k = 0; k <= lastStep; k++) {
+    for (let k = 0; k <= steps; k++) {
       const value = from + k * every
       // On a closed arc the mark at `to` sits on top of the one at `from`.
       if (wraps && k > 0 && Math.abs(value - to) <= eps) break

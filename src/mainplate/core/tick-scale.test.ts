@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import type { Scale } from "./geometry"
 import { EVALUABLE_PROPS, populate, resolveTicks, type TickContext } from "./tick-scale"
 
@@ -82,6 +82,48 @@ describe("populate — tiers", () => {
     const tier1 = out.filter((t) => t.tier === 1)
     expect(tier0.map((t) => t.index)).toEqual([0, 1])
     expect(tier1.map((t) => t.index)).toEqual([0, 1, 2])
+  })
+
+  it("refuses an `every` small enough to hang the tab", () => {
+    // 1e-9 over a 0–60 domain is sixty billion marks: the loop never returns
+    // and the tab locks before anything renders. The guard has to fire before
+    // the loop starts, not partway through it.
+    expect(() => populate({ tiers: [{ every: 1e-9 }] }, fullCircle)).toThrow(
+      /mainplate: tier 0 with `every: 1e-9`/,
+    )
+    expect(() => populate({ tiers: [{ every: 1e-9 }] }, fullCircle)).toThrow(
+      // Sixty billion and change: `span + eps` over `every`, eps being 6e-8 here.
+      /would generate 60000000060 marks, past the ceiling of 10000/,
+    )
+  })
+
+  it("names the offending tier by index, not just the first", () => {
+    expect(() => populate({ tiers: [{ every: 15 }, { every: 0.0001 }] }, fullCircle)).toThrow(
+      /mainplate: tier 1 with `every: 0.0001`/,
+    )
+  })
+
+  it("allows the densest tier a real dial would ask for", () => {
+    // A chronograph's fifths-of-a-second track: 300 marks over 0–60.
+    expect(populate({ tiers: [{ every: 0.2 }] }, fullCircle)).toHaveLength(300)
+    // And right up to the ceiling itself, which must not be off by one.
+    const dense: Scale = { min: 0, max: 9999, startAngle: -135, sweepAngle: 270 }
+    expect(populate({ tiers: [{ every: 1 }] }, dense)).toHaveLength(10000)
+  })
+
+  it("truncates and logs in production rather than locking the page", () => {
+    vi.stubEnv("NODE_ENV", "production")
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {})
+    try {
+      const out = populate({ tiers: [{ every: 0.001 }] }, fullCircle)
+      expect(out).toHaveLength(10000)
+      expect(spy).toHaveBeenCalledTimes(1)
+      expect(spy.mock.calls[0]?.[0]).toMatch(/would generate 60001 marks/)
+      expect(spy.mock.calls[0]?.[0]).toMatch(/Truncating to 10000 marks/)
+    } finally {
+      spy.mockRestore()
+      vi.unstubAllEnvs()
+    }
   })
 
   it("preserves passthrough fields from the tier spec", () => {

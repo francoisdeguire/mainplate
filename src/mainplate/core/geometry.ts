@@ -51,7 +51,9 @@ export function normalizeAngle(a: Degrees): Degrees {
  *
  * A degenerate domain (min === max) would divide by zero and produce a NaN
  * transform, which makes an element vanish with no error. Falls back to
- * startAngle instead. See spec section 17.
+ * startAngle instead: a dial collapsed onto a single value is a legitimate
+ * transient state — a loading face, a fetched range that has not arrived — and
+ * it should render as a pile at the start of the scale, not disappear.
  */
 export function valueToAngle(value: DomainValue, s: Scale): Degrees {
   const span = s.max - s.min

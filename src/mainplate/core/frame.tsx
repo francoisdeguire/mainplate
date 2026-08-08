@@ -41,7 +41,14 @@ export type MainplateProps = Omit<SVGProps<SVGSVGElement>, "viewBox"> & {
   padding?: DialUnits
   /**
    * The face's shape, as a name, a descriptor, or an `Outline`. Prefer the
-   * plain-data forms in a server component. @default "circle"
+   * plain-data forms in a server component.
+   *
+   * Memoised on identity, not on contents: an object written inline —
+   * `outline={{ kind: "rect", ratio: 0.78 }}` — is a new object on every parent
+   * render, so it rebuilds the outline and invalidates the frame context every
+   * time, re-rendering every primitive in the face. Hoist the descriptor to
+   * module scope or wrap it in `useMemo`. The string forms (`"circle"`,
+   * `"rect"`) are stable already and need neither. @default "circle"
    */
   outline?: OutlineSpec
   /** @default 0 */
@@ -129,7 +136,7 @@ export function useFrame() {
   const frame = use(FrameContext)
   if (!frame) {
     throw new Error(
-      "useFrame() must be used inside <Mainplate>. If you are building a custom mark, " +
+      "mainplate: useFrame() must be used inside <Mainplate>. If you are building a custom mark, " +
         "render it as a child of <Mainplate> or <Subdial>.",
     )
   }

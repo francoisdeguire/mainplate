@@ -26,10 +26,23 @@ export type Align = "inside" | "center" | "outside"
 
 /**
  * How a mark rotates. Position comes from the frame; orientation is its own
- * axis. `radial` points the up-axis at the centre, `tangential` is a quarter
- * turn from that, `edge` is perpendicular to the outline edge — identical to
- * `radial` on a circle, visibly different on a rect — and `upright` keeps
- * every mark parallel.
+ * axis. Every value below describes where the mark's *up-axis* points — the
+ * direction `length` runs, which for asymmetric `renderItem` artwork is the
+ * difference between right way up and upside down.
+ *
+ * - `radial` (default): up points **outward**, directly away from the centre,
+ *   along the ray through the mark. At 12 o'clock that is screen-up.
+ * - `tangential`: up points along the direction of travel, a quarter turn
+ *   clockwise from `radial`. At 12 o'clock that is screen-right.
+ * - `edge`: up points outward along the outline's **outward normal**, so the
+ *   mark stands perpendicular to the edge it sits on.
+ * - `upright`: up is always screen-up. Every mark stays parallel, unrotated,
+ *   whatever its position — the convention for applied numerals.
+ *
+ * `edge` and `radial` coincide on a circle, where the outward normal at an
+ * angle *is* the ray through it. They diverge on a rectangle: along a flat,
+ * `radial` fans out with the ray while `edge` stays square to the side. That
+ * divergence is the reason this library separates the two.
  */
 export type Orient = "radial" | "tangential" | "edge" | "upright"
 
@@ -204,7 +217,12 @@ export function Ticks(props: TicksProps) {
   } = props
 
   if (props.r !== undefined && props.inset !== undefined) {
-    throw new Error("<Ticks> takes only one of `r` or `inset`. See spec section 5.8.")
+    throw new Error(
+      "mainplate: <Ticks> takes only one of `r` or `inset`. `r` is frame-anchored — a fixed " +
+        "radius from the centre, ignoring the outline. `inset` is outline-anchored — a distance " +
+        "inward from the edge, so it follows the shape. On a circle they can agree; on any " +
+        "other outline they cannot, so there is no sensible way to honour both.",
+    )
   }
 
   const marks = useTicks(props)
@@ -223,7 +241,9 @@ export function Ticks(props: TicksProps) {
   }
 
   // Group by paint: differing geometry merges into one path, differing paint
-  // cannot. That split is the whole cost model in spec section 6.6.
+  // cannot. That split is the whole cost model — a face pays one node per
+  // distinct fill, not one per mark, so sixty ticks in one colour cost one
+  // <path> and the same sixty in three colours cost three.
   const groups = new Map<string, string[]>()
   for (const mark of marks) {
     const fill = (mark.props.fill as string | undefined) ?? "currentColor"

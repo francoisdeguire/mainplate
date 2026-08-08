@@ -148,6 +148,65 @@ describe("rectOutline — aspect ratio", () => {
   })
 })
 
+describe("rectOutline — degenerate options", () => {
+  it("throws on a ratio of zero rather than emitting an infinite viewBox", () => {
+    // The symptom this replaces: bbox().height === Infinity, so <Mainplate>
+    // rendered viewBox="-110 -Infinity 220 Infinity" and the face vanished.
+    expect(() => rectOutline({ ratio: 0 })).toThrow(/mainplate: invalid rectOutline\(\) options/)
+    expect(() => rectOutline({ ratio: 0 })).toThrow(/`ratio` must be finite and greater than 0/)
+    expect(() => rectOutline({ ratio: 0 })).toThrow(/received 0/)
+  })
+
+  it("throws on a negative or non-finite ratio", () => {
+    // ratio: -1 gave a zero-height bbox and (0, 0) normals.
+    expect(() => rectOutline({ ratio: -1 })).toThrow(/received -1/)
+    expect(() => rectOutline({ ratio: Number.NaN })).toThrow(/received NaN/)
+    expect(() => rectOutline({ ratio: Number.POSITIVE_INFINITY })).toThrow(/received Infinity/)
+  })
+
+  it("throws on a negative or non-finite radius", () => {
+    expect(() => rectOutline({ radius: -4 })).toThrow(
+      /`radius` must be finite and not negative, received -4/,
+    )
+    expect(() => rectOutline({ radius: Number.NaN })).toThrow(/`radius` must be finite/)
+  })
+
+  it("names both problems at once when both are bad", () => {
+    expect(() => rectOutline({ ratio: 0, radius: -1 })).toThrow(/`ratio`.*;.*`radius`/s)
+  })
+
+  it("reaches the guard through a descriptor passed to resolveOutline", () => {
+    expect(() => resolveOutline({ kind: "rect", ratio: 0 })).toThrow(
+      /mainplate: invalid rectOutline\(\) options/,
+    )
+  })
+
+  it("accepts the legitimate edges the guard must not reject", () => {
+    expect(() => rectOutline()).not.toThrow()
+    expect(() => rectOutline({ radius: 0 })).not.toThrow()
+    expect(() => rectOutline({ ratio: 1e-6 })).not.toThrow()
+    expect(() => rectOutline({ ratio: 1000, radius: 500 })).not.toThrow()
+  })
+
+  it("logs and falls back to a unit square in production instead of throwing", () => {
+    vi.stubEnv("NODE_ENV", "production")
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {})
+    try {
+      const out = rectOutline({ ratio: 0, radius: -1 })
+      // A square with square corners: the same shape as rectOutline() bare.
+      expect(out.bbox()).toEqual({ x: -100, y: -100, width: 200, height: 200 })
+      expect(out.path()).toBe(rectOutline().path())
+      expect(Number.isFinite(out.bbox().height)).toBe(true)
+      expect(spy).toHaveBeenCalledTimes(1)
+      expect(spy.mock.calls[0]?.[0]).toMatch(/mainplate: invalid rectOutline\(\) options/)
+      expect(spy.mock.calls[0]?.[0]).toMatch(/Falling back to a square with square corners/)
+    } finally {
+      spy.mockRestore()
+      vi.unstubAllEnvs()
+    }
+  })
+})
+
 describe("rectOutline — rounded corners", () => {
   const o = rectOutline({ ratio: 1, radius: 20 })
 

@@ -150,10 +150,18 @@ const EDGE_TOLERANCE = 1e-9
 /**
  * A rectangular outline, optionally with rounded corners.
  *
- * @param ratio  Width divided by height. Per the dial-unit rule, the *minor*
- *               axis half-extent is always 100, so a Tank at 0.78 is 100 wide
- *               and ~128 tall in dial units. @default 1
- * @param radius Corner radius in dial units. @default 0
+ * Degenerate options throw in development and degrade in production, on the
+ * same terms as {@link resolveOutline}: `ratio: 0` would put the bbox height at
+ * `Infinity` and emit `viewBox="-110 -Infinity 220 Infinity"`, and a negative
+ * ratio gives a zero-height box with `(0, 0)` normals. Both make the face
+ * vanish with nothing in the console to explain it.
+ *
+ * @param ratio  Width divided by height; must be finite and greater than zero.
+ *               Per the dial-unit rule, the *minor* axis half-extent is always
+ *               100, so a Tank at 0.78 is 100 wide and ~128 tall in dial
+ *               units. @default 1
+ * @param radius Corner radius in dial units; must be finite and not
+ *               negative. @default 0
  */
 export function rectOutline({
   ratio = 1,
@@ -162,8 +170,33 @@ export function rectOutline({
   ratio?: number
   radius?: DialUnits
 } = {}): Outline {
-  const baseHalfWidth = ratio <= 1 ? DIAL_RADIUS : DIAL_RADIUS * ratio
-  const baseHalfHeight = ratio <= 1 ? DIAL_RADIUS / ratio : DIAL_RADIUS
+  const ratioOk = Number.isFinite(ratio) && ratio > 0
+  const radiusOk = Number.isFinite(radius) && radius >= 0
+
+  if (!ratioOk || !radiusOk) {
+    const problems = [
+      ratioOk ? null : `\`ratio\` must be finite and greater than 0, received ${ratio}`,
+      radiusOk ? null : `\`radius\` must be finite and not negative, received ${radius}`,
+    ].filter((p): p is string => p !== null)
+    const received = `mainplate: invalid rectOutline() options — ${problems.join("; ")}.`
+
+    if (process.env.NODE_ENV !== "production") {
+      throw new Error(
+        `${received} A non-positive ratio collapses or inverts the bounding box, which renders ` +
+          `as an empty or infinite viewBox: the face disappears with no other symptom.`,
+      )
+    }
+
+    // As in `resolveOutline`: degrading beats taking down a dashboard, but
+    // degrading in silence is the failure class this guard exists to prevent.
+    console.error(`${received} Falling back to a square with square corners.`)
+  }
+
+  const safeRatio = ratioOk ? ratio : 1
+  const safeRadius = radiusOk ? radius : 0
+
+  const baseHalfWidth = safeRatio <= 1 ? DIAL_RADIUS : DIAL_RADIUS * safeRatio
+  const baseHalfHeight = safeRatio <= 1 ? DIAL_RADIUS / safeRatio : DIAL_RADIUS
 
   /**
    * Shrinking a rounded rect inward by `d` moves each edge in by `d` and
@@ -174,7 +207,7 @@ export function rectOutline({
   const dims = (inset: DialUnits): RectDims => {
     const hw = Math.max(baseHalfWidth - inset, 0)
     const hh = Math.max(baseHalfHeight - inset, 0)
-    return { hw, hh, rr: Math.max(Math.min(radius - inset, hw, hh), 0) }
+    return { hw, hh, rr: Math.max(Math.min(safeRadius - inset, hw, hh), 0) }
   }
 
   /** Ray/rect intersection, then a corner-arc correction if we landed on one. */
