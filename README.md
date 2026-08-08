@@ -29,7 +29,7 @@ const TANK = { kind: "rect", ratio: 0.78, radius: 12 } as const
 
 export default function Face() {
   return (
-    <Mainplate size={260} max={60} padding={14} outline={TANK}>
+    <Mainplate size={260} max={60} outline={TANK}>
       <Ticks count={60} inset={9} length={6} width={0.6} orient="edge" align="inside" />
     </Mainplate>
   )

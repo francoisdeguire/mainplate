@@ -11,10 +11,10 @@ function Probe({ onFrame }: { onFrame: (v: ReturnType<typeof useFrame>) => void 
 }
 
 describe("<Mainplate>", () => {
-  it("renders an svg with a padded viewBox", () => {
+  it("renders an svg whose viewBox hugs the outline when it clips", () => {
     const { container } = render(<Mainplate />)
     const svg = container.querySelector("svg")
-    expect(svg?.getAttribute("viewBox")).toBe("-110 -110 220 220")
+    expect(svg?.getAttribute("viewBox")).toBe("-100 -100 200 200")
   })
 
   it("derives a non-square viewBox from a non-square outline", () => {
@@ -69,6 +69,34 @@ describe("<Mainplate>", () => {
     expect(a.querySelector("svg")?.getAttribute("aria-label")).toBe("Instrument face")
     const { container: b } = render(<Mainplate label="Speedometer" />)
     expect(b.querySelector("svg")?.getAttribute("aria-label")).toBe("Speedometer")
+  })
+})
+
+describe("padding's default follows clip", () => {
+  const viewBoxOf = (ui: ReactElement) =>
+    render(ui).container.querySelector("svg")?.getAttribute("viewBox")
+
+  it("reserves nothing when clipping, and 10 dial units when clipping is off", () => {
+    // Clipped, nothing may be drawn outside the outline, so reserving room out
+    // there is dead space: the viewBox hugs the outline instead.
+    expect(viewBoxOf(<Mainplate />)).toBe("-100 -100 200 200")
+    expect(viewBoxOf(<Mainplate clip={false} />)).toBe("-110 -110 220 220")
+  })
+
+  it("lets an explicit padding win in both cases", () => {
+    expect(viewBoxOf(<Mainplate padding={20} />)).toBe("-120 -120 240 240")
+    expect(viewBoxOf(<Mainplate clip={false} padding={0} />)).toBe("-100 -100 200 200")
+  })
+
+  it("carries the conditional default into the rendered height", () => {
+    const heightOf = (ui: ReactElement) =>
+      render(ui).container.querySelector("svg")?.getAttribute("height")
+
+    // A Tank is 200 x 256.41 dial units. Clipped, size 200 is the whole width,
+    // so the height is the full outline; unclipped, both gain 20 units.
+    const tank = { kind: "rect", ratio: 0.78 } as const
+    expect(heightOf(<Mainplate outline={tank} size={200} />)).toBe("256")
+    expect(heightOf(<Mainplate outline={tank} size={200} clip={false} />)).toBe("251")
   })
 })
 
@@ -155,6 +183,17 @@ describe("the clip/padding dev warning", () => {
   }
 
   afterEach(() => vi.restoreAllMocks())
+
+  it("stays silent on a bare <Mainplate>, whose defaults no longer contradict", () => {
+    const said = warnings()
+    render(<Mainplate />)
+    render(
+      <Mainplate size={200}>
+        <circle r={4} />
+      </Mainplate>,
+    )
+    expect(said()).toEqual([])
+  })
 
   it("says padding is unusable when clipping is on", () => {
     const said = warnings()

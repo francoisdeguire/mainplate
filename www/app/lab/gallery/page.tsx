@@ -50,7 +50,6 @@ export default function Gallery() {
         >
           <Mainplate
             size={280}
-            padding={12}
             min={0}
             max={220}
             startAngle={-135}
@@ -90,7 +89,7 @@ export default function Gallery() {
           title="Chapter ring, three tiers"
           caption="every 1, every 5, every 15 over a 0–60 domain. Later tier wins at a shared position, so 0/15/30/45 draw once in amber rather than three times stacked — count the colours at the quarters."
         >
-          <Mainplate size={280} padding={12} max={60} label="Chapter ring, three tiers">
+          <Mainplate size={280} max={60} label="Chapter ring, three tiers">
             <circle r={100} fill={PLATE} stroke={EDGE} strokeWidth={0.8} />
             <Ticks
               inset={7}
@@ -109,7 +108,7 @@ export default function Gallery() {
           title="Date window"
           caption="A top-level skip predicate clears every mark whose angle falls in the aperture — after the tier merge, so the position is cleared outright rather than letting the tier below show through. The window itself is a raw <rect> at 3 o'clock."
         >
-          <Mainplate size={280} padding={12} max={60} label="Dial with a date aperture">
+          <Mainplate size={280} max={60} label="Dial with a date aperture">
             <circle r={100} fill={PLATE} stroke={EDGE} strokeWidth={0.8} />
             <Ticks
               inset={7}
@@ -150,7 +149,6 @@ export default function Gallery() {
         >
           <Mainplate
             size={280}
-            padding={12}
             min={0}
             max={100}
             startAngle={-120}
@@ -174,7 +172,7 @@ export default function Gallery() {
           title="Compass rose"
           caption='Degree marks as merged quads; the cardinals are a second <Ticks> using an explicit ticks array whose items carry a label, placed by renderItem. renderItem opts out of the built-in quad, but not of orientation: mark.rotation carries what orient resolves to — 0 for every mark here, because orient="upright" — for the consumer to apply.'
         >
-          <Mainplate size={280} padding={14} max={360} label="Compass rose">
+          <Mainplate size={280} max={360} label="Compass rose">
             <circle r={100} fill={PLATE} stroke={EDGE} strokeWidth={0.8} />
             <Ticks
               inset={6}

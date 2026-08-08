@@ -45,18 +45,39 @@ const FrameContext = createContext<Frame | null>(null)
 export type MainplateProps = Omit<SVGProps<SVGSVGElement>, "clip" | "viewBox"> & {
   /** Width in px. Omit for a fluid face that scales with its container. */
   size?: number
-  /** Room reserved outside the outline, in dial units. @default 10 */
+  /**
+   * Room reserved outside the outline, in dial units — the viewBox grows by
+   * this much on every side. It exists for the things that are allowed to live
+   * out there: numerals set beyond the edge, a hand overhanging it.
+   *
+   * The default follows `clip`, because a fixed one would contradict it. With
+   * clipping on nothing outside the outline can be drawn at all, so reserved
+   * room is dead space and the viewBox hugs the outline instead; with clipping
+   * off that room is usable, so it is there by default.
+   *
+   * An explicit value always wins, in both cases. Passing a padding while
+   * clipping is on is legal — it insets the face within its own box — but it
+   * warns in development, since nothing may be drawn in the space it buys.
+   *
+   * @default 0 when `clip` is true (the default), 10 when `clip` is false
+   */
   padding?: DialUnits
   /**
    * Clip every child to the outline — `outline.path()` at inset 0, the same
    * shape the outline draws, not its bounding box. A real case and crystal cut
    * the dial off at the bezel and nothing escapes it; this is that.
    *
-   * It overrides `padding`, which exists to reserve room *outside* the
-   * outline: numerals set beyond the edge and a hand overhanging it are both
-   * legal, and both invisible while this is on. Pass `clip={false}` to let
-   * them show — you keep the padded viewBox and pay nothing for the opt-out,
-   * as no group and no `<defs>` are emitted at all. @default true
+   * It decides what `padding` defaults to, since the two describe the same
+   * region from opposite sides: numerals set beyond the edge and a hand
+   * overhanging it are both legal, and both invisible while this is on, so a
+   * clipped face reserves no room outside the outline unless you ask. Pass
+   * `clip={false}` to let them show — padding then defaults to 10, and the
+   * opt-out costs nothing else, as no group and no `<defs>` are emitted at
+   * all.
+   *
+   * One thing to know before drawing on the boundary: a stroke centred on the
+   * outline loses its outer half to the clip. Draw the bezel at a small inset,
+   * or turn clipping off for that face. @default true
    */
   clip?: boolean
   /**
@@ -102,13 +123,17 @@ const warned = new Set<string>()
  * there — numerals set beyond the edge, a hand overhanging it — and clipping
  * then cuts every one of them off. The face still renders, so nothing throws
  * and nothing looks broken; the marks simply are not there. Say so once.
+ *
+ * Only an explicit `padding` can reach here: the default is 0 while clipping,
+ * so the combination is always something the caller asked for. A warning that
+ * fired on the bare `<Mainplate />` would teach nothing except to ignore it.
  */
 function warnClipHidesPadding(padding: DialUnits) {
   const message =
     `mainplate: <Mainplate clip padding={${padding}}> reserves ${padding} dial units outside ` +
     `the outline that clipping then makes unusable — anything drawn out there, such as ` +
     `numerals beyond the edge or a hand overhanging it, is cut off at the outline. Pass ` +
-    `clip={false} to let content overhang, or padding={0} to stop reserving room it cannot use.`
+    `clip={false} to let content overhang, or drop the prop to take the clipped default of 0.`
 
   if (warned.has(message)) return
   warned.add(message)
@@ -121,7 +146,7 @@ function warnClipHidesPadding(padding: DialUnits) {
  */
 export function Mainplate({
   size,
-  padding = 10,
+  padding: explicitPadding,
   clip = true,
   outline,
   min = 0,
@@ -133,6 +158,12 @@ export function Mainplate({
   style,
   ...rest
 }: MainplateProps) {
+  // The one default that cannot be a default parameter: it depends on another
+  // prop. Clipping makes the space outside the outline undrawable, so a clipped
+  // face reserves none of it and the viewBox hugs the outline; an unclipped one
+  // keeps the 10 units that numerals and an overhanging hand need.
+  const padding = explicitPadding ?? (clip ? 0 : 10)
+
   const resolvedOutline = useMemo(() => resolveOutline(outline), [outline])
 
   // Unconditional, as hooks must be, and per instance: two faces on one page

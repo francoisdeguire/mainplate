@@ -25,7 +25,11 @@ export default function Playground() {
   const [ratio, setRatio] = useState(1)
   const [radius, setRadius] = useState(0)
   const [size, setSize] = useState(300)
-  const [padding, setPadding] = useState(10)
+  // Both start where the library's own defaults start: clipping on, and so
+  // padding at 0. Reserving room outside the outline while clipping is on is
+  // the one combination <Mainplate> warns about, and a playground that opens
+  // in a warned state teaches the warning is noise.
+  const [padding, setPadding] = useState(0)
   const [clip, setClip] = useState(true)
   const [count, setCount] = useState(12)
   const [inset, setInset] = useState(8)
@@ -52,12 +56,16 @@ export default function Playground() {
       ? ""
       : `const OUTLINE = { kind: "rect", ratio: ${ratio}, radius: ${radius} }\n\n`
 
+  // What <Mainplate> would default `padding` to at the current `clip`, so the
+  // pane can leave the prop out when it would change nothing.
+  const defaultPadding = clip ? 0 : 10
+
   const snippet =
     declaration +
     [
       "<Mainplate",
       `  size={${size}}`,
-      `  padding={${padding}}`,
+      ...(padding === defaultPadding ? [] : [`  padding={${padding}}`]),
       // Only the off state is written out: `clip` defaults to true, and the
       // pane is meant to show what you would actually type.
       ...(clip ? [] : ["  clip={false}"]),

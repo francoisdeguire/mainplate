@@ -53,7 +53,6 @@ export default function Live() {
         <figure className="max-w-[320px]">
           <Mainplate
             size={300}
-            padding={14}
             min={MIN}
             max={MAX}
             startAngle={START}
