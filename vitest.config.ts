@@ -7,5 +7,9 @@ export default defineConfig({
   resolve: {
     alias: { "@/mainplate": fileURLToPath(new URL("./src/mainplate", import.meta.url)) },
   },
-  test: { environment: "node", include: ["src/**/*.test.{ts,tsx}"] },
+  test: {
+    environment: "node",
+    include: ["src/**/*.test.{ts,tsx}"],
+    setupFiles: ["./vitest.setup.ts"],
+  },
 })
