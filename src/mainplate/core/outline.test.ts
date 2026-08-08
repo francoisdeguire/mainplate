@@ -408,9 +408,16 @@ describe("resolveOutline", () => {
     expect((caught as Error).message).toMatch(/object with keys \[pointAt\]/)
   })
 
-  it("requires all four methods, not just the first", () => {
+  it("requires all six methods, not just the first", () => {
     const full = circleOutline()
-    for (const missing of ["pointAt", "normalAt", "bbox", "path"] as const) {
+    for (const missing of [
+      "pointAt",
+      "normalAt",
+      "bbox",
+      "path",
+      "length",
+      "pointAtLength",
+    ] as const) {
       const partial: Record<string, unknown> = { ...full }
       delete partial[missing]
       // @ts-expect-error — exercising the runtime guard.
@@ -434,5 +441,82 @@ describe("resolveOutline", () => {
       spy.mockRestore()
       vi.unstubAllEnvs()
     }
+  })
+})
+
+describe("arc length — length and pointAtLength", () => {
+  it("measures a circle's circumference, insets included", () => {
+    const o = circleOutline()
+    closeTo(o.length(), 2 * Math.PI * 100)
+    closeTo(o.length(10), 2 * Math.PI * 90)
+  })
+
+  it("walks a circle clockwise from the top anchor", () => {
+    const o = circleOutline()
+    const p = o.pointAtLength(o.length() / 4)
+    closeTo(p.x, 100)
+    closeTo(p.y, 0)
+  })
+
+  it("wraps past a full lap and accepts negative distances", () => {
+    const o = circleOutline()
+    const L = o.length()
+    const wrapped = o.pointAtLength(L + 12)
+    const direct = o.pointAtLength(12)
+    closeTo(wrapped.x, direct.x)
+    closeTo(wrapped.y, direct.y)
+    const back = o.pointAtLength(-L / 4)
+    closeTo(back.x, -100)
+    closeTo(back.y, 0)
+  })
+
+  it("returns the centre for a fully collapsed circle instead of NaN", () => {
+    const p = circleOutline().pointAtLength(10, 150)
+    closeTo(p.x, 0)
+    closeTo(p.y, 0)
+  })
+
+  it("measures a rounded rect as straight runs plus quarter arcs", () => {
+    // Eight half-runs of 70 plus four quarter arcs that sum to one full circle.
+    const o = rectOutline({ ratio: 1, radius: 30 })
+    closeTo(o.length(), 8 * 70 + 2 * Math.PI * 30)
+  })
+
+  it("shrinks a rect's perimeter with inset on the same terms as dims", () => {
+    // Inset 9 on the Tank: hw 91, hh 100/0.78 - 9, corner radius 3.
+    const hh = 100 / 0.78 - 9
+    const o = rectOutline({ ratio: 0.78, radius: 12 })
+    closeTo(o.length(9), 4 * (91 - 3) + 4 * (hh - 3) + 2 * Math.PI * 3)
+  })
+
+  it("keeps the quarter-perimeter on the cardinal anchors of a symmetric rect", () => {
+    // This is why perimeter placement still puts III at 3 o'clock on a Tank:
+    // by symmetry, a quarter of the distance is exactly the right-centre.
+    const tank = rectOutline({ ratio: 0.78, radius: 12 })
+    const L = tank.length(9)
+    const quarter = tank.pointAtLength(L / 4, 9)
+    closeTo(quarter.x, 91)
+    closeTo(quarter.y, 0)
+    const half = tank.pointAtLength(L / 2, 9)
+    closeTo(half.x, 0)
+    closeTo(half.y, 100 / 0.78 - 9)
+  })
+
+  it("lands inside a corner arc, where a radial ray never puts a mark", () => {
+    const o = rectOutline({ ratio: 1, radius: 30 })
+    // Half the top run, then half the first corner arc: 45 degrees around the
+    // corner centre at (70, -70).
+    const s = 70 + (Math.PI * 30) / 4
+    const p = o.pointAtLength(s)
+    closeTo(p.x, 70 + 30 * Math.SQRT1_2)
+    closeTo(p.y, -(70 + 30 * Math.SQRT1_2))
+  })
+
+  it("walks a sharp-cornered rect with zero-length arcs skipped", () => {
+    const o = rectOutline({ ratio: 1 })
+    // Quarter perimeter of an 800-long square boundary: the right-centre.
+    const p = o.pointAtLength(200)
+    closeTo(p.x, 100)
+    closeTo(p.y, 0)
   })
 })

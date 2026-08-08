@@ -15,6 +15,7 @@ export {
   fmt,
   normalizeAngle,
   polar,
+  quantize,
   valueToAngle,
 } from "./geometry"
 export type { Outline, OutlineSpec, Rect } from "./outline"
@@ -32,6 +33,6 @@ export type {
   TierSpec,
 } from "./tick-scale"
 export { EVALUABLE_PROPS, populate, resolveTicks } from "./tick-scale"
-export type { Align, MarkGeometry, Orient, TicksProps } from "./ticks"
-export { Ticks, useTicks } from "./ticks"
+export type { Align, MarkGeometry, Orient, Placement, TicksProps } from "./ticks"
+export { orientationOf, Ticks, useTicks } from "./ticks"
 export { useSourceValue } from "./use-source-value"

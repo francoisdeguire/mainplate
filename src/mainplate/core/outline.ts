@@ -11,7 +11,15 @@ import { type Degrees, DIAL_RADIUS, type DialUnits, fmt, type Point, polar } fro
 /** An axis-aligned rectangle in dial units, origin at the dial centre. */
 export type Rect = { x: number; y: number; width: number; height: number }
 
-/** A closed path that statics are placed on, queried by angle. */
+/**
+ * A closed path that statics are placed on, queried by angle — or, for
+ * `placement="perimeter"`, by distance.
+ *
+ * The arc-length pair exists because dividing an outline evenly divides
+ * *distance*, not angle: a Tank's chemin de fer spaces its minutes along the
+ * perimeter, which no per-angle query can express. Both methods are analytic —
+ * straight runs plus quarter arcs, never path sampling.
+ */
 export type Outline = {
   /** The point at `angle` on the outline, shrunk inward by `inset`. */
   pointAt(angle: Degrees, inset?: DialUnits): Point
@@ -21,6 +29,13 @@ export type Outline = {
   bbox(inset?: DialUnits): Rect
   /** SVG path data for the outline shrunk inward by `inset`. */
   path(inset?: DialUnits): string
+  /** Total perimeter of the outline shrunk inward by `inset`. */
+  length(inset?: DialUnits): DialUnits
+  /**
+   * The point `s` dial units along the outline, clockwise from the point at
+   * angle 0. Wraps in either direction, so any real `s` is on the path.
+   */
+  pointAtLength(s: DialUnits, inset?: DialUnits): Point
 }
 
 /** The default outline: a circle of the nominal dial radius. */
@@ -45,6 +60,18 @@ export function circleOutline(): Outline {
       const f = fmt(r)
       // Two half-arcs: SVG cannot express a full circle in a single arc command.
       return `M 0 ${fmt(-r)} A ${f} ${f} 0 1 1 0 ${f} A ${f} ${f} 0 1 1 0 ${fmt(-r)} Z`
+    },
+
+    length: (inset = 0) => 2 * Math.PI * radiusAt(inset),
+
+    pointAtLength: (s, inset = 0) => {
+      const r = radiusAt(inset)
+      const circumference = 2 * Math.PI * r
+      // A fully collapsed circle has nowhere to walk; the centre beats NaN.
+      if (circumference === 0) return { x: 0, y: 0 }
+      // Fraction of a turn is fraction of the circumference; `polar` is
+      // periodic, so wrapping and negative distances come for free.
+      return polar((s / circumference) * 360, r)
     },
   }
 }
@@ -74,7 +101,7 @@ export type OutlineSpec =
 /**
  * Structural check, mirroring `isSource`: every method must be callable.
  *
- * All four, not just `pointAt`. A partial object would otherwise pass as an
+ * All six, not just `pointAt`. A partial object would otherwise pass as an
  * `Outline` and fail later inside `<Mainplate>` — which calls `bbox()` first —
  * as a bare `TypeError`, losing the branded error this module exists to give.
  */
@@ -85,7 +112,9 @@ function isOutline(v: unknown): v is Outline {
     typeof o.pointAt === "function" &&
     typeof o.normalAt === "function" &&
     typeof o.bbox === "function" &&
-    typeof o.path === "function"
+    typeof o.path === "function" &&
+    typeof o.length === "function" &&
+    typeof o.pointAtLength === "function"
   )
 }
 
@@ -129,7 +158,7 @@ export function resolveOutline(spec?: OutlineSpec): Outline {
     throw new Error(
       `${received} Pass "circle", "rect", a descriptor such as ` +
         `{ kind: "rect", ratio: 0.78, radius: 12 }, or an Outline from circleOutline() / ` +
-        `rectOutline() with all four methods. Note that an Outline is made of functions, so ` +
+        `rectOutline() with all six methods. Note that an Outline is made of functions, so ` +
         `it cannot be passed from a React Server Component — use the descriptor form there, ` +
         `or build the Outline inside a "use client" component.`,
     )
@@ -239,6 +268,32 @@ export function rectOutline({
     return { point, centre: centre as Point | null }
   }
 
+  /** Perimeter: eight straight half-runs plus four quarter arcs, one circle's worth. */
+  const perimeterOf = ({ hw, hh, rr }: RectDims): DialUnits =>
+    4 * (hw - rr) + 4 * (hh - rr) + 2 * Math.PI * rr
+
+  /**
+   * The outline as clockwise segments starting at the top-centre anchor — the
+   * point at angle 0, so arc-length and angular addressing share their origin.
+   * An arc's `start` is the clock angle of its first point around its centre.
+   */
+  const segmentsOf = ({ hw, hh, rr }: RectDims) => {
+    const cx = hw - rr
+    const cy = hh - rr
+    const quarter = (Math.PI / 2) * rr
+    return [
+      { kind: "line", from: { x: 0, y: -hh }, dir: { x: 1, y: 0 }, len: cx },
+      { kind: "arc", centre: { x: cx, y: -cy }, start: 0, len: quarter },
+      { kind: "line", from: { x: hw, y: -cy }, dir: { x: 0, y: 1 }, len: 2 * cy },
+      { kind: "arc", centre: { x: cx, y: cy }, start: 90, len: quarter },
+      { kind: "line", from: { x: cx, y: hh }, dir: { x: -1, y: 0 }, len: 2 * cx },
+      { kind: "arc", centre: { x: -cx, y: cy }, start: 180, len: quarter },
+      { kind: "line", from: { x: -hw, y: cy }, dir: { x: 0, y: -1 }, len: 2 * cy },
+      { kind: "arc", centre: { x: -cx, y: -cy }, start: 270, len: quarter },
+      { kind: "line", from: { x: -cx, y: -hh }, dir: { x: 1, y: 0 }, len: cx },
+    ] as const
+  }
+
   return {
     pointAt: (angle, inset = 0) => trace(angle, inset).point,
 
@@ -280,6 +335,33 @@ export function rectOutline({
         `${a} ${fmt(-hw + rr)} ${fmt(-hh)}`,
         "Z",
       ].join(" ")
+    },
+
+    length: (inset = 0) => perimeterOf(dims(inset)),
+
+    pointAtLength: (s, inset = 0) => {
+      const d = dims(inset)
+      const total = perimeterOf(d)
+      // Fully collapsed — an inset past both half-extents. The centre beats NaN.
+      if (total === 0) return { x: 0, y: 0 }
+
+      let remaining = ((s % total) + total) % total
+      for (const seg of segmentsOf(d)) {
+        // Zero-length segments — sharp corners, or a fully-consumed edge —
+        // must be stepped over, or the arc maths below divides zero by zero.
+        if (seg.len <= 0) continue
+        if (remaining > seg.len) {
+          remaining -= seg.len
+          continue
+        }
+        if (seg.kind === "line") {
+          return { x: seg.from.x + seg.dir.x * remaining, y: seg.from.y + seg.dir.y * remaining }
+        }
+        const p = polar(seg.start + (remaining / seg.len) * 90, d.rr)
+        return { x: seg.centre.x + p.x, y: seg.centre.y + p.y }
+      }
+      // Float noise walking the last segment; the seam is the honest answer.
+      return { x: 0, y: -d.hh }
     },
   }
 }

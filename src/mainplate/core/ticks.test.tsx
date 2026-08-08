@@ -122,6 +122,58 @@ describe("<Ticks>", () => {
     expect(normals).toEqual(["0,1", "-1,0"])
   })
 
+  it("hands renderItem the rotation that orient resolves to", () => {
+    // Value 10 of 60 is angle 60, which lands on the right edge of a square.
+    // `edge` must resolve to 90 — the outward normal points along +x — while
+    // `radial` stays at the ray's own 60. Without a rotation on the mark,
+    // `orient` is a silent no-op for custom artwork: the built-in quad turns
+    // and a renderItem mark does not, and the consumer cannot even reimplement
+    // the recipe from what they are handed.
+    const seen: Record<string, number | undefined> = {}
+    for (const orient of ["radial", "tangential", "edge", "upright"] as const) {
+      render(
+        <Mainplate max={60} outline={rectOutline({ ratio: 1 })}>
+          <Ticks
+            ticks={[{ value: 10 }]}
+            orient={orient}
+            renderItem={(mark) => {
+              seen[orient] = mark.rotation
+              return <circle key={mark.index} r={1} />
+            }}
+          />
+        </Mainplate>,
+      )
+    }
+    expect(seen).toEqual({ radial: 60, tangential: 150, edge: 90, upright: 0 })
+  })
+
+  it("quantizes the geometry handed to renderItem", () => {
+    // `fmt` protects the library's own path strings from engine float drift,
+    // but renderItem coordinates went out raw: Math.cos differs in the last
+    // ULP between the server's JSC and the browser's V8, so a consumer's
+    // <text x={mark.point.x}> hydration-mismatched on real pages. The mark's
+    // numbers go through the same 4dp quantisation fmt applies to path data,
+    // so both sides serialize the same string.
+    const seen: number[] = []
+    render(
+      <Mainplate max={60}>
+        <Ticks
+          ticks={[{ value: 7 }]}
+          inset={9}
+          orient="edge"
+          renderItem={({ point, normal, rotation, index }) => {
+            seen.push(point.x, point.y, normal.x, normal.y, rotation)
+            return <circle key={index} r={1} />
+          }}
+        />
+      </Mainplate>,
+    )
+    // Angle 42 on a circle: every coordinate is irrational, and the edge
+    // rotation comes off atan2 — raw, none of these survive toFixed(4) intact.
+    expect(seen).toHaveLength(5)
+    for (const n of seen) expect(n).toBe(Number(n.toFixed(4)))
+  })
+
   it("keeps renderItem keys unique when marks share a value via at", () => {
     // `at` exists to nudge a mark without falsifying its value — the
     // tachymeter case — so two marks may share a `value` at different

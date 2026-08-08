@@ -68,14 +68,28 @@ export function angleToValue(angle: Degrees, s: Scale): DomainValue {
 }
 
 /**
+ * Round to the library's fixed 4dp precision, normalising -0 away.
+ *
+ * Anything mainplate hands to React must serialize to the same string on the
+ * server and in the browser, and `Math.sin`/`cos`/`atan2` are not spec-pinned:
+ * JSC and V8 disagree in the last ULP, which is exactly enough to make a
+ * consumer's `<text x={mark.point.x}>` a hydration mismatch. Four decimals of
+ * a dial unit is a millionth of the face — far below anything the eye or the
+ * geometry depends on, and identical on both engines.
+ */
+export function quantize(n: number): number {
+  const rounded = Number(n.toFixed(4))
+  return rounded === 0 ? 0 : rounded
+}
+
+/**
  * Format a number for SVG path data at fixed precision.
  *
  * Path strings are snapshot-tested, and raw float output differs across
  * platforms and JS engines. Rounding here keeps those snapshots stable.
  */
 export function fmt(n: number): string {
-  const rounded = Number(n.toFixed(4))
-  return String(rounded === 0 ? 0 : rounded)
+  return String(quantize(n))
 }
 
 /**
