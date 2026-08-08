@@ -11,7 +11,8 @@
     "test:watch": "vitest",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "check": "bun run typecheck && bun run typecheck:www && bun run lint && bun run test"
+    "check:boundaries": "bun run scripts/check-boundaries.ts",
+    "check": "bun run typecheck && bun run typecheck:www && bun run lint && bun run check:boundaries && bun run test"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.7",

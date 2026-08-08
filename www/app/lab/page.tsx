@@ -1,5 +1,6 @@
 import { Mainplate } from "@/mainplate/core/frame"
 import { rectOutline } from "@/mainplate/core/outline"
+import { Ticks } from "@/mainplate/core/ticks"
 import { ClientFace } from "./client-face"
 
 /** A Tank-proportioned face, as plain data so it can cross the RSC boundary. */
@@ -10,21 +11,59 @@ export default function Lab() {
     <main className="mx-auto max-w-5xl p-8">
       <h1 className="text-sm font-medium tracking-wide uppercase opacity-60">mainplate lab</h1>
       <p className="mt-2 text-sm opacity-60">Dev harness. Faces render here as primitives land.</p>
-      <div className="mt-8 flex flex-wrap gap-8">
-        {/* Both of these render straight from this server component — this file
-            carries no client directive and no wrapper. That is the proof that
-            an outline can be described with plain data across the RSC
-            boundary. */}
-        <Mainplate size={280}>
-          <circle r={100} fill="none" stroke="oklch(0.4 0.01 285)" />
-          <circle r={4} fill="oklch(0.92 0.01 95)" />
-        </Mainplate>
-        <Mainplate size={240} outline={TANK}>
-          {/* Calling .path() here is fine: it returns a string, and strings
-              serialize. Only the Outline *object* cannot cross. */}
-          <path d={rectOutline(TANK).path()} fill="none" stroke="oklch(0.4 0.01 285)" />
-          <circle r={4} fill="oklch(0.92 0.01 95)" />
-        </Mainplate>
+      <div className="mt-8 flex flex-wrap gap-10">
+        {/* This face renders straight from this server component — this file
+            carries no client directive and no wrapper. The outline crosses the
+            RSC boundary as plain data; calling .path() here is fine because it
+            returns a string, and strings serialize. Only the Outline *object*
+            cannot cross. */}
+        <figure>
+          <Mainplate size={260} max={60} padding={14} outline={TANK}>
+            <path d={rectOutline(TANK).path()} fill="oklch(0.96 0.012 95)" />
+            <path
+              d={rectOutline(TANK).path(9)}
+              fill="none"
+              stroke="oklch(0.2 0.005 285)"
+              strokeWidth={0.6}
+            />
+            <path
+              d={rectOutline(TANK).path(15)}
+              fill="none"
+              stroke="oklch(0.2 0.005 285)"
+              strokeWidth={0.6}
+            />
+            <Ticks
+              count={60}
+              inset={9}
+              length={6}
+              width={0.6}
+              orient="edge"
+              align="inside"
+              fill="oklch(0.2 0.005 285)"
+            />
+          </Mainplate>
+          <figcaption className="mt-2 text-xs opacity-60">
+            Tank — chemin de fer, radial placement, edge orientation
+          </figcaption>
+        </figure>
+
+        <figure>
+          <Mainplate size={260} max={60}>
+            <circle r={100} fill="oklch(0.17 0.005 285)" />
+            <Ticks
+              inset={6}
+              width={1}
+              tiers={[
+                { every: 1, length: 4, fill: "oklch(0.45 0.01 285)" },
+                { every: 5, length: 10, width: 2.5, fill: "oklch(0.92 0.01 95)" },
+              ]}
+            />
+          </Mainplate>
+          <figcaption className="mt-2 text-xs opacity-60">
+            Circle — two tiers, merged, no double-draw at the fives
+          </figcaption>
+        </figure>
+
         <ClientFace />
       </div>
     </main>
