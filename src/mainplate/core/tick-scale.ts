@@ -162,7 +162,11 @@ export type TickContext = {
 /** Omit marks by listing their domain values, or by predicate. */
 export type Skip = readonly DomainValue[] | ((ctx: TickContext) => boolean)
 
-/** A prop that may vary per mark. */
+/**
+ * A prop that may vary per mark. The function form cannot cross the RSC
+ * boundary — using it puts the page behind `"use client"`, exactly like a
+ * factory-built `Outline`; the plain form serializes, so a server page keeps.
+ */
 export type TickProp<T> = T | ((ctx: TickContext) => T)
 
 /** `populate`'s input plus the two `skip` placements and passthrough props. */

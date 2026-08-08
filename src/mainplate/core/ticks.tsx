@@ -108,12 +108,23 @@ type Anchor = { inset?: TickProp<DialUnits>; r?: never } | { r: TickProp<DialUni
  * The per-mark props are omitted from the `SVGProps` base: React declares
  * `width`, `offset`, `r` and `fill` as SVG attributes, and intersecting those
  * with `TickProp` would silently strip the function-valued forms.
+ *
+ * Any function-valued prop — a `skip` predicate, a function `length` or
+ * `fill`, `renderItem` — forces the call site behind `"use client"`, exactly
+ * like a factory-built `Outline`: functions cannot cross the RSC boundary,
+ * and React's serialization error never names mainplate. The plain forms —
+ * numbers, strings, arrays — all serialize, so a server page keeps them.
  */
 export type TicksProps = Population &
   Anchor &
   Omit<SVGProps<SVGGElement>, "children" | "fill" | "offset" | "orient" | "r" | "width"> & {
     from?: DomainValue
     to?: DomainValue
+    /**
+     * Omit marks: domain values (matched within epsilon), or a predicate.
+     * The array form serializes across the RSC boundary; the predicate form
+     * is a function and forces `"use client"` at the call site.
+     */
     skip?: Skip
     /** Which part of the mark sits on the anchor. @default "center" */
     align?: Align
@@ -129,7 +140,10 @@ export type TicksProps = Population &
     offset?: TickProp<DialUnits>
     /** Paint. Marks sharing a fill merge into one path. @default "currentColor" */
     fill?: TickProp<string>
-    /** Opt into one node per mark. */
+    /**
+     * Opt into one node per mark. A function, so it forces `"use client"` at
+     * the call site — the same boundary rule as a factory-built `Outline`.
+     */
     renderItem?: (mark: MarkGeometry) => ReactNode
   }
 
