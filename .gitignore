@@ -22,3 +22,6 @@ pnpm-debug.log*
 
 .claude/
 .superpowers/
+.next/
+out/
+bun.lockb.bak

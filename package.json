@@ -1,0 +1,23 @@
+{
+  "name": "mainplate",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "check": "bun run typecheck && bun run lint && bun run test"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.7",
+    "@types/node": "^26.2.0",
+    "@types/react": "^19",
+    "@vitejs/plugin-react": "^6.0.5",
+    "react": "^19",
+    "react-dom": "^19",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  }
+}
