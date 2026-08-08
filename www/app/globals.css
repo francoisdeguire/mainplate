@@ -3,4 +3,10 @@
 @theme {
   --color-ink: oklch(0.92 0.01 95);
   --color-surface: oklch(0.17 0.005 285);
+
+  /* Added for the temporary /lab exploration pages. Remove with them. */
+  --color-dim: oklch(0.6 0.008 285);
+  --color-line: oklch(0.29 0.006 285);
+  --color-plate: oklch(0.21 0.006 285);
+  --color-accent: oklch(0.8 0.13 78);
 }

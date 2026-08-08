@@ -1,5 +1,6 @@
 import { Mainplate, rectOutline, Ticks } from "@/mainplate/core"
 import { ClientFace } from "./client-face"
+import { LabNav } from "./nav"
 
 /** A Tank-proportioned face, as plain data so it can cross the RSC boundary. */
 const TANK = { kind: "rect", ratio: 0.78, radius: 12 } as const
@@ -9,6 +10,7 @@ export default function Lab() {
     <main className="mx-auto max-w-5xl p-8">
       <h1 className="text-sm font-medium tracking-wide uppercase opacity-60">mainplate lab</h1>
       <p className="mt-2 text-sm opacity-60">Dev harness. Faces render here as primitives land.</p>
+      <LabNav current="/lab" />
       <div className="mt-8 flex flex-wrap gap-10">
         {/* This face renders straight from this server component — this file
             carries no client directive and no wrapper. The outline crosses the
