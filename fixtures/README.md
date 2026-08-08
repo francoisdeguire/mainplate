@@ -23,13 +23,26 @@ box — which is what case D exists to catch.
 
 ### Status
 
-**Not yet verified.** Pending a run across Chrome, Safari, and Firefox.
+**Partly verified.** Chrome passes. Safari and Firefox are outstanding.
 
 | Browser | Version | A | B | C | D |
 | --- | --- | --- | --- | --- | --- |
-| Chrome | | | | | |
+| Chrome | 151.0.7922.77 | pass | pass | pass | pass |
 | Safari | | | | | |
 | Firefox | | | | | |
+
+Chrome was checked numerically rather than by eye, via `getScreenCTM()`:
+
+| Case | Measurement | Result |
+| --- | --- | --- |
+| A | tip offset from pivot | dx +81.818, dy 0 — due east |
+| B | hand pivot vs subdial centre | 0 px apart |
+| C | bar midpoint vs centre dot | 0 px apart |
+| D | pivot separation; angle between | 0 px; sin 0 — screen CTMs identical |
+
+Case D is the one that matters. The two rects have bounding-box heights of 90
+and 115, and their screen CTMs are byte-identical, so `transform-box: view-box`
+is demonstrably not resolving against either element's own box.
 
 If any case fails, the recipe is rejected in favour of the SVG
 `transform="rotate(N)"` attribute — unambiguous everywhere, but it forfeits
