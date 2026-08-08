@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect } from "react"
-import { createSource, fmt, Mainplate, Ticks, useSourceValue, valueToAngle } from "@/mainplate/core"
+import { createSource, Mainplate, Ticks, useSourceValue, valueToAngle } from "@/mainplate/core"
 import { LabNav, ScratchNotice } from "../nav"
 
 const MIN = 0
@@ -80,8 +80,8 @@ export default function Live() {
               tiers={[{ every: 40 }]}
               renderItem={(mark) => (
                 <text
-                  x={fmt(mark.point.x)}
-                  y={fmt(mark.point.y)}
+                  x={mark.point.x}
+                  y={mark.point.y}
                   fontSize={11}
                   textAnchor="middle"
                   dominantBaseline="central"

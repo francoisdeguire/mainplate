@@ -17,6 +17,43 @@ export default function Lab() {
             RSC boundary as plain data; calling .path() here is fine because it
             returns a string, and strings serialize. Only the Outline *object*
             cannot cross. */}
+        {/* The same Tank twice, one prop apart. Perimeter placement divides
+            the railway evenly by arc length — what Cartier actually does, and
+            why a Tank's hands famously miss the in-between minutes. Radial
+            placement keeps every mark on its hand's ray, and pays for it with
+            gaps that stretch to double width at the corners. */}
+        <figure>
+          <Mainplate size={260} max={60} padding={14} outline={TANK}>
+            <path d={rectOutline(TANK).path()} fill="oklch(0.96 0.012 95)" />
+            <path
+              d={rectOutline(TANK).path(9)}
+              fill="none"
+              stroke="oklch(0.2 0.005 285)"
+              strokeWidth={0.6}
+            />
+            <path
+              d={rectOutline(TANK).path(15)}
+              fill="none"
+              stroke="oklch(0.2 0.005 285)"
+              strokeWidth={0.6}
+            />
+            <Ticks
+              count={60}
+              inset={9}
+              placement="perimeter"
+              length={6}
+              width={0.6}
+              orient="edge"
+              align="inside"
+              fill="oklch(0.2 0.005 285)"
+            />
+          </Mainplate>
+          <figcaption className="mt-2 max-w-[260px] text-xs opacity-60">
+            Tank — chemin de fer, <em>perimeter</em> placement: minutes divide the outline evenly,
+            corners included. What Cartier does.
+          </figcaption>
+        </figure>
+
         <figure>
           <Mainplate size={260} max={60} padding={14} outline={TANK}>
             <path d={rectOutline(TANK).path()} fill="oklch(0.96 0.012 95)" />
@@ -42,8 +79,9 @@ export default function Lab() {
               fill="oklch(0.2 0.005 285)"
             />
           </Mainplate>
-          <figcaption className="mt-2 text-xs opacity-60">
-            Tank — chemin de fer, radial placement, edge orientation
+          <figcaption className="mt-2 max-w-[260px] text-xs opacity-60">
+            Same Tank, <em>radial</em> placement: every mark on its hand&rsquo;s ray, so spacing
+            doubles at the corners. Right for anything a hand must point at.
           </figcaption>
         </figure>
 

@@ -8,7 +8,7 @@
  * `Outline`. Nothing here is interactive.
  */
 import type { ReactNode } from "react"
-import { fmt, Mainplate, Ticks } from "@/mainplate/core"
+import { Mainplate, Ticks } from "@/mainplate/core"
 import { LabNav, ScratchNotice } from "../nav"
 
 const PLATE = "oklch(0.21 0.006 285)"
@@ -36,9 +36,11 @@ export default function Gallery() {
         coordinates.
       </p>
       <p className="mt-3 max-w-[68ch] text-sm text-dim">
-        Every <code>renderItem</code> coordinate below goes through <code>fmt()</code>. Without it
-        these pages threw a hydration mismatch: <code>mark.point</code> is raw <code>Math.sin</code>
-        /<code>Math.cos</code> output, and the server&rsquo;s last ULP is not the browser&rsquo;s.
+        Every <code>renderItem</code> coordinate below is used raw — <code>mark.point</code>,{" "}
+        <code>mark.normal</code> and <code>mark.rotation</code> come pre-quantized to the same 4dp
+        as the library&rsquo;s own path data, so the server&rsquo;s <code>Math.sin</code> ULPs and
+        the browser&rsquo;s serialize identically. These pages used to wrap everything in{" "}
+        <code>fmt()</code> to dodge a hydration mismatch; that workaround is gone.
       </p>
 
       <div className="mt-8 grid gap-10 sm:grid-cols-2 xl:grid-cols-3">
@@ -69,8 +71,8 @@ export default function Gallery() {
               tiers={[{ every: 20 }]}
               renderItem={(mark) => (
                 <text
-                  x={fmt(mark.point.x)}
-                  y={fmt(mark.point.y)}
+                  x={mark.point.x}
+                  y={mark.point.y}
                   fontSize={11}
                   textAnchor="middle"
                   dominantBaseline="central"
@@ -170,7 +172,7 @@ export default function Gallery() {
 
         <Figure
           title="Compass rose"
-          caption='Degree marks as merged quads; the cardinals are a second <Ticks> using an explicit ticks array whose items carry a label, placed by renderItem. Note that renderItem opts out of the built-in quad entirely — orient="upright" describes the intent, but the <text> is unrotated because that is how it was written, not because Ticks rotated it.'
+          caption='Degree marks as merged quads; the cardinals are a second <Ticks> using an explicit ticks array whose items carry a label, placed by renderItem. renderItem opts out of the built-in quad, but not of orientation: mark.rotation carries what orient resolves to — 0 for every mark here, because orient="upright" — for the consumer to apply.'
         >
           <Mainplate size={280} padding={14} max={360} label="Compass rose">
             <circle r={100} fill={PLATE} stroke={EDGE} strokeWidth={0.8} />
@@ -193,8 +195,8 @@ export default function Gallery() {
               ]}
               renderItem={(mark) => (
                 <text
-                  x={fmt(mark.point.x)}
-                  y={fmt(mark.point.y)}
+                  x={mark.point.x}
+                  y={mark.point.y}
                   fontSize={17}
                   textAnchor="middle"
                   dominantBaseline="central"
