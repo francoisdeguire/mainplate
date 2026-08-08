@@ -48,3 +48,112 @@ export function circleOutline(): Outline {
     },
   }
 }
+
+type RectDims = { hw: DialUnits; hh: DialUnits; rr: DialUnits }
+
+// Guards float noise when classifying which edge or corner a traced point sits on.
+const EDGE_TOLERANCE = 1e-9
+
+/**
+ * A rectangular outline, optionally with rounded corners.
+ *
+ * @param ratio  Width divided by height. Per the dial-unit rule, the *minor*
+ *               axis half-extent is always 100, so a Tank at 0.78 is 100 wide
+ *               and ~128 tall in dial units. @default 1
+ * @param radius Corner radius in dial units. @default 0
+ */
+export function rectOutline({
+  ratio = 1,
+  radius = 0,
+}: {
+  ratio?: number
+  radius?: DialUnits
+} = {}): Outline {
+  const baseHalfWidth = ratio <= 1 ? DIAL_RADIUS : DIAL_RADIUS * ratio
+  const baseHalfHeight = ratio <= 1 ? DIAL_RADIUS / ratio : DIAL_RADIUS
+
+  /**
+   * Shrinking a rounded rect inward by `d` moves each edge in by `d` and
+   * reduces the corner radius by `d`, which leaves the corner *centres* where
+   * they were. The angle at which an arc begins still moves, so region
+   * classification has to be recomputed per inset.
+   */
+  const dims = (inset: DialUnits): RectDims => {
+    const hw = Math.max(baseHalfWidth - inset, 0)
+    const hh = Math.max(baseHalfHeight - inset, 0)
+    return { hw, hh, rr: Math.max(Math.min(radius - inset, hw, hh), 0) }
+  }
+
+  /** Ray/rect intersection, then a corner-arc correction if we landed on one. */
+  const trace = (angle: Degrees, inset: DialUnits) => {
+    const { hw, hh, rr } = dims(inset)
+    const d = polar(angle, 1)
+
+    const tx = d.x !== 0 ? hw / Math.abs(d.x) : Number.POSITIVE_INFINITY
+    const ty = d.y !== 0 ? hh / Math.abs(d.y) : Number.POSITIVE_INFINITY
+    let t = Math.min(tx, ty)
+    let point: Point = { x: d.x * t, y: d.y * t }
+
+    const cornerX = hw - rr
+    const cornerY = hh - rr
+    const inCorner =
+      rr > 0 &&
+      Math.abs(point.x) > cornerX + EDGE_TOLERANCE &&
+      Math.abs(point.y) > cornerY + EDGE_TOLERANCE
+
+    if (!inCorner) return { point, centre: null as Point | null }
+
+    // Ray/circle: |t*d - c|^2 = rr^2. Take the far root to exit through the arc.
+    const centre: Point = { x: Math.sign(point.x) * cornerX, y: Math.sign(point.y) * cornerY }
+    const dc = d.x * centre.x + d.y * centre.y
+    const disc = dc * dc - (centre.x * centre.x + centre.y * centre.y) + rr * rr
+    t = dc + Math.sqrt(Math.max(disc, 0))
+    point = { x: d.x * t, y: d.y * t }
+
+    return { point, centre: centre as Point | null }
+  }
+
+  return {
+    pointAt: (angle, inset = 0) => trace(angle, inset).point,
+
+    normalAt: (angle, inset = 0) => {
+      const { point, centre } = trace(angle, inset)
+      if (centre) {
+        const vx = centre.x - point.x
+        const vy = centre.y - point.y
+        const len = Math.hypot(vx, vy) || 1
+        return { x: vx / len, y: vy / len }
+      }
+      const { hw } = dims(inset)
+      // On a vertical edge the x-extent is at its limit; otherwise horizontal.
+      return Math.abs(Math.abs(point.x) - hw) < EDGE_TOLERANCE
+        ? { x: -Math.sign(point.x), y: 0 }
+        : { x: 0, y: -Math.sign(point.y) }
+    },
+
+    bbox: (inset = 0) => {
+      const { hw, hh } = dims(inset)
+      return { x: -hw, y: -hh, width: hw * 2, height: hh * 2 }
+    },
+
+    path: (inset = 0) => {
+      const { hw, hh, rr } = dims(inset)
+      if (rr === 0) {
+        return `M ${fmt(-hw)} ${fmt(-hh)} H ${fmt(hw)} V ${fmt(hh)} H ${fmt(-hw)} Z`
+      }
+      const a = `A ${fmt(rr)} ${fmt(rr)} 0 0 1`
+      return [
+        `M ${fmt(-hw + rr)} ${fmt(-hh)}`,
+        `H ${fmt(hw - rr)}`,
+        `${a} ${fmt(hw)} ${fmt(-hh + rr)}`,
+        `V ${fmt(hh - rr)}`,
+        `${a} ${fmt(hw - rr)} ${fmt(hh)}`,
+        `H ${fmt(-hw + rr)}`,
+        `${a} ${fmt(-hw)} ${fmt(hh - rr)}`,
+        `V ${fmt(-hh + rr)}`,
+        `${a} ${fmt(-hw + rr)} ${fmt(-hh)}`,
+        "Z",
+      ].join(" ")
+    },
+  }
+}
