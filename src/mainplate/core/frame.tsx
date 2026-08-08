@@ -4,7 +4,7 @@
  * The frame: the angular coordinate system, and the root that establishes it.
  * May import: geometry, outline. Must not import: time/.
  */
-import { createContext, type ReactNode, type SVGProps, use, useMemo } from "react"
+import { createContext, type ReactNode, type SVGProps, use, useId, useMemo } from "react"
 import {
   angleToValue,
   type Degrees,
@@ -33,12 +33,32 @@ export type ScaleOverride = Partial<Scale>
 
 const FrameContext = createContext<Frame | null>(null)
 
-/** Props for {@link Mainplate}: the frame's scale, its outline, and any SVG prop. */
-export type MainplateProps = Omit<SVGProps<SVGSVGElement>, "viewBox"> & {
+/**
+ * Props for {@link Mainplate}: the frame's scale, its outline, and any SVG prop.
+ *
+ * `clip` is omitted from the `SVGProps` base before being redeclared below.
+ * React still types the deprecated SVG `clip` presentation attribute as
+ * `number | string`, and intersecting that with a boolean gives `never` — the
+ * prop would exist and be impossible to pass. The attribute it shadows was
+ * removed from the spec and does nothing in any current browser.
+ */
+export type MainplateProps = Omit<SVGProps<SVGSVGElement>, "clip" | "viewBox"> & {
   /** Width in px. Omit for a fluid face that scales with its container. */
   size?: number
   /** Room reserved outside the outline, in dial units. @default 10 */
   padding?: DialUnits
+  /**
+   * Clip every child to the outline — `outline.path()` at inset 0, the same
+   * shape the outline draws, not its bounding box. A real case and crystal cut
+   * the dial off at the bezel and nothing escapes it; this is that.
+   *
+   * It overrides `padding`, which exists to reserve room *outside* the
+   * outline: numerals set beyond the edge and a hand overhanging it are both
+   * legal, and both invisible while this is on. Pass `clip={false}` to let
+   * them show — you keep the padded viewBox and pay nothing for the opt-out,
+   * as no group and no `<defs>` are emitted at all. @default true
+   */
+  clip?: boolean
   /**
    * The face's shape, as a name, a descriptor, or an `Outline`. Prefer the
    * plain-data forms in a server component.
@@ -65,12 +85,44 @@ export type MainplateProps = Omit<SVGProps<SVGSVGElement>, "viewBox"> & {
 }
 
 /**
+ * Dev warnings already spoken, keyed by their whole message.
+ *
+ * A face re-renders on every tick of its source — ten times a second on the
+ * live gauge — and a warning repeated ten times a second is a warning nobody
+ * reads. Keyed by the message rather than by a single flag, so a genuinely
+ * different misconfiguration still gets said out loud once. Dev only: the
+ * caller below never reaches this in production.
+ */
+const warned = new Set<string>()
+
+/**
+ * `clip` and `padding` pull against each other, and the loser is silent.
+ *
+ * `padding` reserves room outside the outline for the things allowed to live
+ * there — numerals set beyond the edge, a hand overhanging it — and clipping
+ * then cuts every one of them off. The face still renders, so nothing throws
+ * and nothing looks broken; the marks simply are not there. Say so once.
+ */
+function warnClipHidesPadding(padding: DialUnits) {
+  const message =
+    `mainplate: <Mainplate clip padding={${padding}}> reserves ${padding} dial units outside ` +
+    `the outline that clipping then makes unusable — anything drawn out there, such as ` +
+    `numerals beyond the edge or a hand overhanging it, is cut off at the outline. Pass ` +
+    `clip={false} to let content overhang, or padding={0} to stop reserving room it cannot use.`
+
+  if (warned.has(message)) return
+  warned.add(message)
+  console.warn(message)
+}
+
+/**
  * The root of a face: an `<svg>` in dial units that establishes the frame every
  * primitive inside it reads from.
  */
 export function Mainplate({
   size,
   padding = 10,
+  clip = true,
   outline,
   min = 0,
   max = 1,
@@ -82,6 +134,17 @@ export function Mainplate({
   ...rest
 }: MainplateProps) {
   const resolvedOutline = useMemo(() => resolveOutline(outline), [outline])
+
+  // Unconditional, as hooks must be, and per instance: two faces on one page
+  // must not share a `<defs>` id, or the second silently clips to the first
+  // one's outline — and a docs page renders many faces at once.
+  //
+  // `useId` and nothing else. A module counter breaks hydration, and a literal
+  // breaks the second face. Its output has changed shape across React versions
+  // — `:r0:`, `«r0»`, `_R_0_` — so `url(#…)` is the only way this reference is
+  // ever written: all three delimiter styles resolve there, but the first two
+  // are not valid in a bare `#id` CSS selector.
+  const clipId = useId()
 
   const frame = useMemo<Frame>(
     () => ({
@@ -111,6 +174,22 @@ export function Mainplate({
       ? { style: { width: "100%", height: "auto", ...style } }
       : { width: size, height: Math.round(size * aspect), style }
 
+  if (process.env.NODE_ENV !== "production" && clip && padding > 0) warnClipHidesPadding(padding)
+
+  // Opting out costs nothing in the DOM: no wrapper group, no empty `<defs>`.
+  const body = clip ? (
+    <>
+      <defs>
+        <clipPath id={clipId}>
+          <path d={resolvedOutline.path()} />
+        </clipPath>
+      </defs>
+      <g clipPath={`url(#${clipId})`}>{children}</g>
+    </>
+  ) : (
+    children
+  )
+
   return (
     <svg
       viewBox={viewBox}
@@ -121,7 +200,7 @@ export function Mainplate({
       {...sized}
       {...rest}
     >
-      <FrameContext value={frame}>{children}</FrameContext>
+      <FrameContext value={frame}>{body}</FrameContext>
     </svg>
   )
 }

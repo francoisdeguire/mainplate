@@ -83,7 +83,18 @@ function NailFace({
   orient: Orient
 }) {
   return (
-    <Mainplate outline={outline} padding={24} max={12} label={`Twelve marks, orient ${orient}`}>
+    // clip={false}, and this page is the reason the prop exists. Under
+    // orient="upright" the 6 o'clock stem runs about two dial units past the
+    // outline, and clipping trims it — on the one page whose whole job is
+    // showing the true shape and direction of a mark, a mark quietly missing
+    // its tip is the bug, not the fix.
+    <Mainplate
+      outline={outline}
+      padding={24}
+      max={12}
+      clip={false}
+      label={`Twelve marks, orient ${orient}`}
+    >
       <path d={path} fill={PLATE} stroke={EDGE} strokeWidth={0.8} />
       <Ticks
         count={12}

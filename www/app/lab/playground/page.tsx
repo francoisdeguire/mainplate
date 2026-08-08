@@ -26,6 +26,7 @@ export default function Playground() {
   const [radius, setRadius] = useState(0)
   const [size, setSize] = useState(300)
   const [padding, setPadding] = useState(10)
+  const [clip, setClip] = useState(true)
   const [count, setCount] = useState(12)
   const [inset, setInset] = useState(8)
   const [length, setLength] = useState(12)
@@ -57,6 +58,9 @@ export default function Playground() {
       "<Mainplate",
       `  size={${size}}`,
       `  padding={${padding}}`,
+      // Only the off state is written out: `clip` defaults to true, and the
+      // pane is meant to show what you would actually type.
+      ...(clip ? [] : ["  clip={false}"]),
       kind === "circle" ? '  outline="circle"' : "  outline={OUTLINE}",
       `  min={${min}}`,
       `  max={${max}}`,
@@ -109,6 +113,9 @@ export default function Playground() {
           <Group title="frame">
             <Slider label="size" value={size} min={120} max={460} step={10} onChange={setSize} />
             <Slider label="padding" value={padding} min={0} max={48} onChange={setPadding} />
+            {/* Pull `inset` to 0 with align="outside" to watch this earn its
+                keep: the marks leave the outline, and clipping eats them. */}
+            <Toggle label="clip" value={clip} onChange={setClip} />
             <Slider
               label="startAngle"
               value={startAngle}
@@ -151,6 +158,7 @@ export default function Playground() {
               size={size}
               padding={padding}
               outline={outline}
+              clip={clip}
               min={min}
               max={max}
               startAngle={startAngle}
@@ -244,6 +252,28 @@ function Slider({
         className="accent-accent"
       />
       <span className="text-right tabular-nums">{value}</span>
+    </label>
+  )
+}
+
+function Toggle({
+  label,
+  value,
+  onChange,
+}: {
+  label: string
+  value: boolean
+  onChange: (value: boolean) => void
+}) {
+  return (
+    <label className="grid grid-cols-[5.5rem_1fr] items-center gap-2 text-xs">
+      <span className="text-dim">{label}</span>
+      <input
+        type="checkbox"
+        checked={value}
+        onChange={(event) => onChange(event.target.checked)}
+        className="size-3.5 justify-self-start accent-accent"
+      />
     </label>
   )
 }
