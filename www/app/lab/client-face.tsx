@@ -1,7 +1,6 @@
 "use client"
 
-import { Mainplate } from "@/mainplate/core/frame"
-import { rectOutline } from "@/mainplate/core/outline"
+import { Mainplate, rectOutline } from "@/mainplate/core"
 
 /**
  * The other half of the outline contract: a factory-built `Outline` object,

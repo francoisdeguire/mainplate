@@ -1,6 +1,4 @@
-import { Mainplate } from "@/mainplate/core/frame"
-import { rectOutline } from "@/mainplate/core/outline"
-import { Ticks } from "@/mainplate/core/ticks"
+import { Mainplate, rectOutline, Ticks } from "@/mainplate/core"
 import { ClientFace } from "./client-face"
 
 /** A Tank-proportioned face, as plain data so it can cross the RSC boundary. */
