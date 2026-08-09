@@ -5,6 +5,8 @@
  * React, and nothing in this directory may import from `time/`.
  */
 
+export type { ArcProps } from "./arc"
+export { Arc } from "./arc"
 export type { Anchor, At, ClockPosition } from "./at"
 export { resolveAt } from "./at"
 export type { Ink, TickFace } from "./clearance"
