@@ -2,18 +2,22 @@
 
 /**
  * `<Hand>`: the moving pointer.
- * May import: frame, geometry. Must not import: time/.
+ * May import: frame, geometry, source. Must not import: time/.
  *
- * The controlled form — a pure function of props. Rotation is the only thing
- * this library animates and the single largest correctness risk, so the
- * transform is the browser-verified §2.9 recipe and nothing else: three nested
- * groups, only the middle one turning, `transform-box` and `transform-origin`
- * written out rather than inherited from a default that differs between SVG
- * and HTML. See `fixtures/transform.html`.
+ * Two forms behind one prop. A number is the controlled form — a pure function
+ * of props. A `Source` is the live form: the hand subscribes and writes
+ * `style.rotate` through a ref, so a watch face updating eleven times a second
+ * costs zero React renders. Rotation is the only thing this library animates
+ * and the single largest correctness risk, so the transform is the
+ * browser-verified §2.9 recipe and nothing else: three nested groups, only the
+ * middle one turning, `transform-box` and `transform-origin` written out
+ * rather than inherited from a default that differs between SVG and HTML. See
+ * `fixtures/transform.html`.
  */
-import type { ReactNode, SVGProps } from "react"
+import { type ReactNode, type SVGProps, useEffect, useRef } from "react"
 import { type ScaleOverride, useFrame } from "./frame"
 import { type Degrees, type DialUnits, type DomainValue, fmt, quantize } from "./geometry"
+import { isSource, type Source } from "./source"
 
 /**
  * Props for {@link Hand}: a value, the artwork's own frame of reference, the
@@ -35,8 +39,15 @@ export type HandProps = Omit<
   SVGProps<SVGGElement>,
   "fill" | "max" | "min" | "scale" | "transform" | "width"
 > & {
-  /** Where the hand points, in domain units. */
-  value: DomainValue
+  /**
+   * Where the hand points: a domain value, or a `Source` of one.
+   *
+   * A number is the controlled form, a pure function of props. A `Source` is
+   * the live form — the hand subscribes and writes `style.rotate` through a
+   * ref, so the value can change every frame without React rendering anything.
+   * Switch between the two freely; the subscription follows.
+   */
+  value: DomainValue | Source<number>
   /**
    * The artwork's rotation point, in the artwork's own coordinate space.
    *
@@ -71,10 +82,15 @@ export type HandProps = Omit<
   /**
    * Lower bound of the domain this hand reads. Overrides the frame's for this
    * hand alone — a clock is three hands with three different maxima on one
-   * face — and never writes back to it. @default the frame's `min`
+   * face — and never writes back to it. §8.10 precedence: this beats
+   * `source.domain`, which beats the frame.
+   * @default the source's `domain.min` if it declares one, else the frame's `min`
    */
   min?: DomainValue
-  /** Upper bound of the domain this hand reads. @default the frame's `max` */
+  /**
+   * Upper bound of the domain this hand reads.
+   * @default the source's `domain.max` if it declares one, else the frame's `max`
+   */
   max?: DomainValue
   /** Angle this hand's `min` sits at. @default the frame's `startAngle` */
   startAngle?: Degrees
@@ -119,6 +135,27 @@ function handPath(length: DialUnits, tail: DialUnits, width: DialUnits): string 
 }
 
 /**
+ * Assemble the scale this hand reads from its resolved bounds. Built key by
+ * key rather than spread wholesale: `{ ...frame, max: undefined }` would
+ * overwrite the frame's `max` with `undefined` and take the mapping to NaN,
+ * which makes a hand vanish with nothing in the console. Shared by the render
+ * path and the ref path, so the two cannot disagree about what a hand reads.
+ */
+function buildOverride(
+  min: DomainValue | undefined,
+  max: DomainValue | undefined,
+  startAngle: Degrees | undefined,
+  sweepAngle: Degrees | undefined,
+): ScaleOverride {
+  const override: ScaleOverride = {}
+  if (min !== undefined) override.min = min
+  if (max !== undefined) override.max = max
+  if (startAngle !== undefined) override.startAngle = startAngle
+  if (sweepAngle !== undefined) override.sweepAngle = sweepAngle
+  return override
+}
+
+/**
  * A pointer that turns with a value.
  *
  * Pivots at the frame's centre, always: a hand pivoting somewhere else is a
@@ -143,20 +180,63 @@ export function Hand({
   ...rest
 }: HandProps) {
   const { frame, angleFor } = useFrame()
+  const rotationRef = useRef<SVGGElement | null>(null)
 
-  // Built key by key rather than spread wholesale: `{ ...frame, max: undefined }`
-  // would overwrite the frame's `max` with `undefined` and take the mapping to
-  // NaN, which makes a hand vanish with nothing in the console.
-  const override: ScaleOverride = {}
-  if (min !== undefined) override.min = min
-  if (max !== undefined) override.max = max
-  if (startAngle !== undefined) override.startAngle = startAngle
-  if (sweepAngle !== undefined) override.sweepAngle = sweepAngle
+  // The runtime discriminator for the union. `isSource` can only witness
+  // `Source<unknown>`; the prop's type says the only source form here is
+  // `Source<number>`, so the assertion restates what the union declares.
+  let source: Source<number> | null = null
+  let current: DomainValue
+  if (isSource(value)) {
+    source = value as Source<number>
+    current = source.get()
+  } else {
+    current = value
+  }
+
+  // §8.10 precedence: an explicit prop beats `source.domain`, which beats the
+  // frame. Only `min`/`max` exist on a domain; the angles stay prop-or-frame.
+  const domain = source === null ? undefined : source.domain
+  const resolvedMin = min !== undefined ? min : domain?.min
+  const resolvedMax = max !== undefined ? max : domain?.max
 
   // Quantised because this string is a hydration boundary: the one node the
   // library animates is also the one whose value differs in the last ULP
-  // between the server's engine and the browser's.
-  const rotation = quantize(angleFor(value, override))
+  // between the server's engine and the browser's. With a source, this render
+  // path still writes the current value, so the server's HTML carries the same
+  // rotation the client hydrates and the effect below then keeps live.
+  const rotation = quantize(
+    angleFor(current, buildOverride(resolvedMin, resolvedMax, startAngle, sweepAngle)),
+  )
+
+  // Detached from the source object so the effect's dependencies are the
+  // methods themselves: `createSource` returns closures with stable identity,
+  // so re-renders re-run nothing, while swapping the source — or swapping to a
+  // plain number, which makes both null — tears down and resubscribes. A
+  // wrapper closure here would have a fresh identity per render and silently
+  // churn the subscription eleven times a second.
+  const subscribe = source === null ? null : source.subscribe
+  const get = source === null ? null : source.get
+
+  useEffect(() => {
+    if (subscribe === null || get === null) return
+    const write = () => {
+      // Null while unmounting: the teardown runs first in practice, but a
+      // notification arriving mid-teardown must not touch a detached node.
+      const node = rotationRef.current
+      if (node === null) return
+      // Quantised here too — this write bypasses React entirely, so the render
+      // path's quantisation does not cover it.
+      const deg = quantize(
+        angleFor(get(), buildOverride(resolvedMin, resolvedMax, startAngle, sweepAngle)),
+      )
+      node.style.rotate = `${deg}deg`
+    }
+    // Written once on subscription, not only on change: a value that moved
+    // between this render and this effect would otherwise never be drawn.
+    write()
+    return subscribe(write)
+  }, [subscribe, get, angleFor, resolvedMin, resolvedMax, startAngle, sweepAngle])
 
   const [px, py] = pivot ?? [0, 0]
   const [nx, ny] = nudge ?? [0, 0]
@@ -177,7 +257,10 @@ export function Hand({
          SVG and HTML and changed between Transforms Level 1 and 2, and
          `fill-box` would pivot each hand around its own bounding box, so a
          hand with a tail would not stay collinear with one without. */
-      <g style={{ rotate: `${rotation}deg`, transformBox: "view-box", transformOrigin: "0 0" }}>
+      <g
+        ref={rotationRef}
+        style={{ rotate: `${rotation}deg`, transformBox: "view-box", transformOrigin: "0 0" }}
+      >
         {/* Stage 3, static: the artwork's own space. Read right to left —
             the pivot is subtracted in the units the artwork was drawn in,
             the result is scaled into dial units, and the optical nudge lands

@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
-import { render } from "@testing-library/react"
+import { act, render } from "@testing-library/react"
+import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
 import type { Frame } from "./frame"
 import { Mainplate, useFrame } from "./frame"
 import { Hand } from "./hand"
+import { createSource, type Source, type WritableSource } from "./source"
 
 /** The three groups of the §2.9 recipe: position, rotation, artwork. */
 const position = (c: HTMLElement) => c.querySelector('[data-mp="hand"]')
@@ -290,5 +292,195 @@ describe("<Hand> — the DOM contract", () => {
     expect(root?.getAttribute("data-wrapped")).toBe("yes")
     expect(root?.getAttribute("transform")).toBe("translate(0 0)")
     expect(rotation(container)).not.toBeNull()
+  })
+})
+
+describe("<Hand> — driven by a Source", () => {
+  /**
+   * A source whose subscription traffic is observable from outside: every
+   * subscribe and every teardown is counted. The teardown assertions watch the
+   * unsubscribe actually *run* — the vacuous form of that test, "set() after
+   * unmount does not throw", passes whether or not the cleanup exists, and is
+   * a defect this project already paid for once in Plan 1.
+   */
+  function instrument(initial: number, domain?: { min: number; max: number }) {
+    const s = createSource(initial, domain)
+    const calls = { subscribes: 0, teardowns: 0 }
+    const spied: WritableSource<number> = {
+      ...s,
+      subscribe: (cb: () => void) => {
+        calls.subscribes += 1
+        const off = s.subscribe(cb)
+        return () => {
+          calls.teardowns += 1
+          off()
+        }
+      },
+    }
+    return { spied, calls }
+  }
+
+  it("subscribes on mount and runs the teardown on unmount", () => {
+    const { spied, calls } = instrument(15)
+    const { unmount } = render(
+      <Mainplate min={0} max={60}>
+        <Hand value={spied} />
+      </Mainplate>,
+    )
+    expect(calls.subscribes).toBe(1)
+    expect(calls.teardowns).toBe(0)
+    unmount()
+    expect(calls.subscribes).toBe(1)
+    expect(calls.teardowns).toBe(1)
+  })
+
+  it("writes the rotation through the ref without re-rendering anything", () => {
+    // The entire point of the seam: a face ticking eleven times a second must
+    // cost zero React renders. Two counters — one in the parent's body, one in
+    // the hand's own render prop — so an internal setState is caught even
+    // though it would never re-render the parent.
+    const s = createSource(0)
+    const renders = { face: 0, hand: 0 }
+    function Face() {
+      renders.face += 1
+      return (
+        <Mainplate min={0} max={60}>
+          <Hand
+            value={s}
+            render={(props) => {
+              renders.hand += 1
+              return <g {...props} />
+            }}
+          />
+        </Mainplate>
+      )
+    }
+    const { container } = render(<Face />)
+    expect(rotation(container)?.getAttribute("style")).toBe(recipe(0))
+    expect(renders).toEqual({ face: 1, hand: 1 })
+
+    act(() => s.set(15))
+    // The whole recipe string, not just the angle: the ref write must change
+    // `rotate` alone, leaving transform-box and transform-origin standing and
+    // adding no transition of its own.
+    expect(rotation(container)?.getAttribute("style")).toBe(recipe(90))
+    expect(renders).toEqual({ face: 1, hand: 1 })
+  })
+
+  it("quantises what the ref path writes, exactly as the render path does", () => {
+    // The ref path bypasses React entirely, so the render path's quantisation
+    // does not cover it: raw, a seventh of a turn is 51.42857142857143deg.
+    const s = createSource(0)
+    const { container } = render(
+      <Mainplate min={0} max={7}>
+        <Hand value={s} />
+      </Mainplate>,
+    )
+    act(() => s.set(1))
+    expect(rotation(container)?.getAttribute("style")).toBe(recipe(51.4286))
+  })
+
+  it("keeps one subscription across parent re-renders", () => {
+    // `subscribe` and `get` must reach the effect unwrapped: a fresh closure
+    // identity per render tears the subscription down and re-establishes it on
+    // every render — churn no other test in this file can see.
+    const { spied, calls } = instrument(15)
+    function Face({ tick }: { tick: number }) {
+      return (
+        <Mainplate min={0} max={60}>
+          <Hand value={spied} opacity={tick} />
+        </Mainplate>
+      )
+    }
+    const { rerender } = render(<Face tick={1} />)
+    rerender(<Face tick={0.9} />)
+    rerender(<Face tick={0.8} />)
+    expect(calls.subscribes).toBe(1)
+    expect(calls.teardowns).toBe(0)
+  })
+
+  it("reads min and max from source.domain when no prop overrides them", () => {
+    // The domain {0..12} beats the frame's {0..60}: 3 of 12 is 90°, not 18°.
+    const s = createSource(3, { min: 0, max: 12 })
+    const { container } = render(
+      <Mainplate min={0} max={60}>
+        <Hand value={s} />
+        <Hand value={3} />
+      </Mainplate>,
+    )
+    const [live, plain] = container.querySelectorAll('[data-mp="hand"] > g')
+    expect(live?.getAttribute("style")).toBe(recipe(90))
+    // The sibling still reads the frame: the domain informed one hand, it did
+    // not leak into the context.
+    expect(plain?.getAttribute("style")).toBe(recipe(18))
+    // And the ref path resolves the same scale as the render path did.
+    act(() => s.set(6))
+    expect(live?.getAttribute("style")).toBe(recipe(180))
+  })
+
+  it("lets an explicit prop beat source.domain, which beats the frame", () => {
+    // All three levels present and disagreeing — frame max 60, domain max 12,
+    // prop max 6. The prop wins: 3 of 6 is half the sweep.
+    const s = createSource(3, { min: 0, max: 12 })
+    const { container } = render(
+      <Mainplate min={0} max={60}>
+        <Hand value={s} max={6} />
+      </Mainplate>,
+    )
+    expect(rotation(container)?.getAttribute("style")).toBe(recipe(180))
+    // The ref path honours the same precedence.
+    act(() => s.set(1.5))
+    expect(rotation(container)?.getAttribute("style")).toBe(recipe(90))
+  })
+
+  it("falls back to the frame when the source declares no domain", () => {
+    const s = createSource(15)
+    const { container } = render(
+      <Mainplate min={0} max={60}>
+        <Hand value={s} />
+      </Mainplate>,
+    )
+    expect(rotation(container)?.getAttribute("style")).toBe(recipe(90))
+  })
+
+  it("switches between a number and a Source without leaking a subscription", () => {
+    const { spied, calls } = instrument(15)
+    function Face({ value }: { value: number | Source<number> }) {
+      return (
+        <Mainplate min={0} max={60}>
+          <Hand value={value} />
+        </Mainplate>
+      )
+    }
+    const { container, rerender, unmount } = render(<Face value={spied} />)
+    expect(calls).toEqual({ subscribes: 1, teardowns: 0 })
+
+    // Back to a number: the controlled form takes over and the old
+    // subscription is gone, observed as its teardown running.
+    rerender(<Face value={45} />)
+    expect(rotation(container)?.getAttribute("style")).toBe(recipe(270))
+    expect(calls).toEqual({ subscribes: 1, teardowns: 1 })
+
+    // And back to the source: a fresh subscription that still drives the DOM.
+    rerender(<Face value={spied} />)
+    expect(calls).toEqual({ subscribes: 2, teardowns: 1 })
+    act(() => spied.set(30))
+    expect(rotation(container)?.getAttribute("style")).toBe(recipe(180))
+
+    unmount()
+    expect(calls).toEqual({ subscribes: 2, teardowns: 2 })
+  })
+
+  it("serialises the source's current value on the server, quantised", () => {
+    // No effect runs on the server, so the render path alone must carry the
+    // exact rotation string the client hydrates against — quantised, since a
+    // raw float differs in the last ULP between the two engines.
+    const s = createSource(1, { min: 0, max: 7 })
+    const html = renderToStaticMarkup(
+      <Mainplate min={0} max={60}>
+        <Hand value={s} />
+      </Mainplate>,
+    )
+    expect(html).toContain('style="rotate:51.4286deg;transform-box:view-box;transform-origin:0 0"')
   })
 })
