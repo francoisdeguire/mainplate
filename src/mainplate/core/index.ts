@@ -24,6 +24,8 @@ export {
   quantize,
   valueToAngle,
 } from "./geometry"
+export type { NumeralGeometry, NumeralsProps } from "./numerals"
+export { Numerals } from "./numerals"
 export type { Outline, OutlineSpec, Rect } from "./outline"
 export { circleOutline, rectOutline, resolveOutline } from "./outline"
 export type { PlaceProps } from "./place"
