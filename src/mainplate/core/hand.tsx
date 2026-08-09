@@ -182,13 +182,14 @@ export function Hand({
   const { frame, angleFor } = useFrame()
   const rotationRef = useRef<SVGGElement | null>(null)
 
-  // The runtime discriminator for the union. `isSource` can only witness
-  // `Source<unknown>`; the prop's type says the only source form here is
-  // `Source<number>`, so the assertion restates what the union declares.
+  // The runtime discriminator for the union. `isSource` guards for
+  // `Source<unknown>`, and `Source<number>` is a subtype of it — `T` sits in
+  // return position only — so narrowing keeps the union's own `Source<number>`
+  // constituent. No assertion needed on either branch.
   let source: Source<number> | null = null
   let current: DomainValue
   if (isSource(value)) {
-    source = value as Source<number>
+    source = value
     current = source.get()
   } else {
     current = value
