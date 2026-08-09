@@ -49,6 +49,24 @@ describe("<Dial>", () => {
     expect(dial(container)?.getAttribute("d")).toBe(outline.path(6))
   })
 
+  it("defaults fill to currentColor, so an ancestor's color themes the surface", () => {
+    const { container } = render(
+      <Mainplate>
+        <Dial />
+      </Mainplate>,
+    )
+    expect(dial(container)?.getAttribute("fill")).toBe("currentColor")
+  })
+
+  it("lets an explicit fill replace the currentColor default", () => {
+    const { container } = render(
+      <Mainplate>
+        <Dial fill="#111" />
+      </Mainplate>,
+    )
+    expect(dial(container)?.getAttribute("fill")).toBe("#111")
+  })
+
   it("spreads SVG props onto the path", () => {
     const { container } = render(
       <Mainplate>

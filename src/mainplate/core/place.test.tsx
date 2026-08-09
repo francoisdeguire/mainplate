@@ -103,6 +103,29 @@ describe("<Place> — position", () => {
     expect(position(container)?.getAttribute("opacity")).toBe("0.5")
   })
 
+  it("defaults fill to currentColor, so unfilled children theme with color", () => {
+    const { container } = render(
+      <Mainplate>
+        <Place at="3h">
+          <circle r={4} />
+          <circle r={2} fill="#f00" />
+        </Place>
+      </Mainplate>,
+    )
+    expect(position(container)?.getAttribute("fill")).toBe("currentColor")
+    // A child's own paint still wins: attributes beat inherited fill in SVG.
+    expect(container.querySelector('circle[r="2"]')?.getAttribute("fill")).toBe("#f00")
+  })
+
+  it("lets an explicit fill replace the currentColor default", () => {
+    const { container } = render(
+      <Mainplate>
+        <Place at="3h" fill="#0af" />
+      </Mainplate>,
+    )
+    expect(position(container)?.getAttribute("fill")).toBe("#0af")
+  })
+
   it("refuses a caller's transform at compile time", () => {
     // The spread lands after the position transform, so a caller's would
     // replace it and drop the artwork at the centre with nothing in the

@@ -28,7 +28,10 @@ import { type Orient, orientationOf } from "./ticks"
  * render at the centre with nothing in the console. Wrap the children in a
  * `<g>` of your own, or reach for `nudge`.
  */
-export type PlaceProps = Omit<SVGProps<SVGGElement>, "offset" | "orient" | "r" | "transform"> &
+export type PlaceProps = Omit<
+  SVGProps<SVGGElement>,
+  "fill" | "offset" | "orient" | "r" | "transform"
+> &
   Anchor & {
     /** Where it goes: degrees, a clock position, or a literal `[x, y]`. */
     at: At
@@ -63,6 +66,14 @@ export type PlaceProps = Omit<SVGProps<SVGGElement>, "offset" | "orient" | "r" |
      * @default "upright"
      */
     orient?: Orient
+    /**
+     * Paint the children inherit when they set none of their own. Defaults to
+     * `currentColor` — the rule for every primitive's paint — so unfilled
+     * artwork themes with an ancestor's `color` exactly as the built-ins do,
+     * while a child's explicit `fill` still wins by SVG inheritance.
+     * @default "currentColor"
+     */
+    fill?: string
   }
 
 /**
@@ -81,6 +92,7 @@ export function Place({
   offset = 0,
   nudge,
   orient = "upright",
+  fill = "currentColor",
   children,
   ...rest
 }: PlaceProps) {
@@ -101,6 +113,7 @@ export function Place({
   return (
     <g
       data-mp="place"
+      fill={fill}
       {...rest}
       // After the spread, not before: the type already refuses a caller's
       // `transform`, and this is the second lock, for the untyped spread that

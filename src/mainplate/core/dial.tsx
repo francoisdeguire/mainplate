@@ -20,9 +20,16 @@ import type { DialUnits } from "./geometry"
  * since a stroke on the surface path looks plausible until it clips at the
  * outline (§3.3) or refuses to animate as an arc.
  */
-export type DialProps = Omit<SVGProps<SVGPathElement>, "d" | "stroke" | "strokeWidth"> & {
+export type DialProps = Omit<SVGProps<SVGPathElement>, "d" | "fill" | "stroke" | "strokeWidth"> & {
   /** Distance inward from the outline edge, in dial units. @default 0 */
   inset?: DialUnits
+  /**
+   * Paint for the surface: a solid, a gradient or a pattern `url()`. Defaults
+   * to `currentColor` — the rule for every primitive's paint — so a single
+   * `color` on an ancestor themes the whole face, and Tailwind's colour
+   * utilities work without per-element classes. @default "currentColor"
+   */
+  fill?: string
   stroke?: never
   strokeWidth?: never
 }
@@ -34,7 +41,7 @@ export type DialProps = Omit<SVGProps<SVGPathElement>, "d" | "stroke" | "strokeW
  * solid, a gradient or a pattern with no library mechanism in between, and so
  * the surface costs exactly one node on a face that may carry hundreds.
  */
-export function Dial({ inset = 0, ...rest }: DialProps) {
+export function Dial({ inset = 0, fill = "currentColor", ...rest }: DialProps) {
   const outline = useOutline()
-  return <path data-mp="dial" d={outline.path(inset)} {...rest} />
+  return <path data-mp="dial" d={outline.path(inset)} fill={fill} {...rest} />
 }
