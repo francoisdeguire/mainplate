@@ -23,13 +23,13 @@ box — which is what case D exists to catch.
 
 ### Status
 
-**Partly verified.** Chrome passes. Safari and Firefox are outstanding.
+**Verified.** All four cases pass in all three browsers. The CSS rotate recipe ships.
 
 | Browser | Version | A | B | C | D |
 | --- | --- | --- | --- | --- | --- |
 | Chrome | 151.0.7922.77 | pass | pass | pass | pass |
-| Safari | | | | | |
-| Firefox | | | | | |
+| Safari | 26.5.2 | pass | pass | pass | pass |
+| Firefox | 153.0.3 | pass | pass | pass | pass |
 
 Chrome was checked numerically rather than by eye, via `getScreenCTM()`:
 
