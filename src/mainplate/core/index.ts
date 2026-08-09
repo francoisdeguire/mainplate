@@ -5,6 +5,8 @@
  * React, and nothing in this directory may import from `time/`.
  */
 
+export type { Ink, TickFace } from "./clearance"
+export { clearanceRadius, estimateInk, inkClearance } from "./clearance"
 export type { Frame, MainplateProps, ScaleOverride } from "./frame"
 export { Mainplate, useFrame, useOutline } from "./frame"
 export type { Degrees, DialUnits, DomainValue, Point, Scale } from "./geometry"
