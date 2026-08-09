@@ -9,6 +9,7 @@ const ROUTES = [
   { href: "/lab", label: "thesis" },
   { href: "/lab/playground", label: "playground" },
   { href: "/lab/orient", label: "orient" },
+  { href: "/lab/hand", label: "hand" },
   { href: "/lab/gallery", label: "gallery" },
   { href: "/lab/live", label: "live" },
 ] as const

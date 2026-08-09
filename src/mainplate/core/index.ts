@@ -24,6 +24,8 @@ export {
   quantize,
   valueToAngle,
 } from "./geometry"
+export type { HandProps } from "./hand"
+export { Hand } from "./hand"
 export type { NumeralGeometry, NumeralsProps } from "./numerals"
 export { Numerals } from "./numerals"
 export type { Outline, OutlineSpec, Rect } from "./outline"
