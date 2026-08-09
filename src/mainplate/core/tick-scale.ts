@@ -3,31 +3,100 @@
  * no React, no DOM.
  * May import: geometry. Must not import: react, time/.
  */
-import { type Degrees, type DomainValue, epsilonFor, type Scale, valueToAngle } from "./geometry"
+import {
+  type Degrees,
+  type DialUnits,
+  type DomainValue,
+  epsilonFor,
+  type Scale,
+  valueToAngle,
+} from "./geometry"
 
-/** One mark, as authored. `value` is a domain value; `at` overrides its position. */
+/**
+ * The per-mark visual props, in authored form: exactly the keys stage 6 of
+ * the pipeline resolves, each accepting the function form of a `TickProp`.
+ * Anything else on an item is passthrough — carried untouched, typed by the
+ * item's own `T`, and never evaluated, however function-shaped it looks.
+ */
+export type EvaluableProps = {
+  /** Radial extent, in dial units. */
+  length?: TickProp<DialUnits>
+  /** Tangential extent, in dial units. */
+  width?: TickProp<DialUnits>
+  /** Scalar tangential shift, in dial units. */
+  offset?: TickProp<DialUnits>
+  /** Anchor distance inward from the outline, in dial units. */
+  inset?: TickProp<DialUnits>
+  /** Anchor radius from the centre, in dial units. */
+  r?: TickProp<DialUnits>
+  /** Paint. */
+  fill?: TickProp<string>
+}
+
+/** The same six props after stage 6: fallbacks applied, function forms evaluated. */
+export type ResolvedProps = {
+  length?: DialUnits
+  width?: DialUnits
+  offset?: DialUnits
+  inset?: DialUnits
+  r?: DialUnits
+  fill?: string
+}
+
+/**
+ * One mark, as authored. `value` is a domain value; `at` overrides its
+ * position. Everything else the author puts on an item — a label, a flag, a
+ * callback — rides along in the item's own type `T extends TickItem` and
+ * comes back out of `renderItem` as `mark.item`, still typed.
+ */
 export type TickItem = {
   value: DomainValue
   /** Position override in degrees, for nudging a mark without falsifying its value. */
   at?: Degrees
-  [key: string]: unknown
-}
+} & EvaluableProps
 
-/** One tier of a multi-track scale. `every` is a step in domain units. */
-export type TierSpec = {
-  every: DomainValue
-  [key: string]: unknown
-}
+/**
+ * One tier of a multi-track scale. `every` is a step in domain units; the
+ * rest of the spec is folded onto every mark the tier generates, so a tier
+ * population's item type is the spec itself minus `every` and `skip`, plus
+ * the stepped `value` — see {@link TierItemOf}.
+ */
+export type TierSpec = { every: DomainValue } & EvaluableProps
 
-/** A mark after population, carrying its normalized position and provenance. */
-export type ResolvedTick = TickItem & {
+/**
+ * A mark after population, carrying its normalized position and provenance.
+ *
+ * The authored fields stay spread flat — the pipeline's later stages read and
+ * fill them in place — while `item` carries the authored item as one
+ * untouched unit (for a `ticks` population, the very array element), which is
+ * what `useTicks` and `renderItem` hand back.
+ */
+export type ResolvedTick<T extends TickItem = TickItem> = T & {
   /** Normalized position in [0, 1] across the covered bounds. */
   t: number
   /** Index within this mark's own tier. */
   index: number
   /** Which tier produced it; 0 when tiers are not used. */
   tier: number
+  /** The authored item, as a unit, untouched by prop resolution. */
+  item: T
 }
+
+/** The item type a tier population generates: the tier's own props plus the stepped `value`. */
+export type TierItemOf<S> = S extends TierSpec
+  ? Omit<S, "every" | "skip"> & Pick<TickItem, "value">
+  : never
+
+/**
+ * The item type an input's population carries: the element type under
+ * `ticks`, the tier's own props under `tiers` (via {@link TierItemOf}), and
+ * just `{ value }` under `count`, where nothing is authored per mark at all.
+ */
+export type ItemOf<I> = I extends { ticks: readonly (infer T extends TickItem)[] }
+  ? T
+  : I extends { tiers: readonly (infer S)[] }
+    ? TierItemOf<S>
+    : Pick<TickItem, "value">
 
 /** What to populate, and over how much of the domain. */
 export type PopulateInput = {
@@ -63,7 +132,15 @@ const MAX_MARKS_PER_TIER = 10_000
  *
  * `count`, `ticks`, and `tiers` are exactly-one-of. Combining them would need a
  * precedence rule, and a precedence rule is a thing to remember; an error is not.
+ *
+ * The `const` type parameter keeps a literal `ticks` array's shape — items
+ * come back as `ResolvedTick<T>` with their authored fields still typed,
+ * rather than widened or lost to an index signature.
  */
+export function populate<const I extends PopulateInput>(
+  input: I,
+  scale: Scale,
+): ResolvedTick<ItemOf<I>>[]
 export function populate(input: PopulateInput, scale: Scale): ResolvedTick[] {
   const sources = [input.count !== undefined, input.ticks !== undefined, input.tiers !== undefined]
   if (sources.filter(Boolean).length !== 1) {
@@ -93,6 +170,7 @@ export function populate(input: PopulateInput, scale: Scale): ResolvedTick[] {
       t: span === 0 ? 0 : (item.value - from) / span,
       index,
       tier,
+      item,
     }))
 
   if (input.ticks) return withPosition([...input.ticks], 0)
@@ -151,7 +229,12 @@ export function populate(input: PopulateInput, scale: Scale): ResolvedTick[] {
 }
 
 /** What a `skip` predicate and a function-valued prop both receive. */
-export type TickContext = {
+export type TickContext<T = TickItem> = {
+  /**
+   * The authored item, as a unit: a `ticks` array element, the tier's own
+   * props plus `value` under `tiers`, just `{ value }` under `count`.
+   */
+  item: T
   value: DomainValue
   t: number
   index: number
@@ -160,31 +243,31 @@ export type TickContext = {
 }
 
 /** Omit marks by listing their domain values, or by predicate. */
-export type Skip = readonly DomainValue[] | ((ctx: TickContext) => boolean)
+export type Skip<T = TickItem> = readonly DomainValue[] | ((ctx: TickContext<T>) => boolean)
 
 /**
  * A prop that may vary per mark. The function form cannot cross the RSC
  * boundary — using it puts the page behind `"use client"`, exactly like a
  * factory-built `Outline`; the plain form serializes, so a server page keeps.
  */
-export type TickProp<T> = T | ((ctx: TickContext) => T)
+export type TickProp<V, T = TickItem> = V | ((ctx: TickContext<T>) => V)
 
-/** `populate`'s input plus the two `skip` placements and passthrough props. */
+/** `populate`'s input plus the two `skip` placements and the top-level per-mark props. */
 export type ResolveInput = Omit<PopulateInput, "tiers"> & {
   tiers?: readonly (TierSpec & { skip?: Skip })[]
   skip?: Skip
-  [key: string]: unknown
-}
+} & EvaluableProps
 
 /**
  * The per-mark visual props the resolver owns: filled from the top level where
  * a mark left them undefined and, when function-valued, evaluated with a
- * `TickContext`. An allowlist, not a denylist — an unrecognised key that
- * happens to hold a function (`renderItem`, an event handler, a callback
- * `ref`) is left alone by default instead of invoked by default. Geometry
- * props merge into one path; `fill` splits paint and costs a node per colour.
+ * `TickContext`. An allowlist, not a denylist — resolution reads exactly these
+ * keys by name, so an unrecognised field that happens to hold a function
+ * (`renderItem`, an event handler, a callback `ref`) is left alone
+ * structurally instead of invoked by accident. Geometry props merge into one
+ * path; `fill` splits paint and costs a node per colour.
  */
-export const EVALUABLE_PROPS: ReadonlySet<string> = new Set([
+export const EVALUABLE_PROPS: ReadonlySet<keyof ResolvedProps> = new Set<keyof ResolvedProps>([
   "length",
   "width",
   "offset",
@@ -195,6 +278,7 @@ export const EVALUABLE_PROPS: ReadonlySet<string> = new Set([
 
 function contextOf(tick: ResolvedTick, scale: Scale): TickContext {
   return {
+    item: tick.item,
     value: tick.value,
     t: tick.t,
     index: tick.index,
@@ -209,6 +293,14 @@ function shouldSkip(skip: Skip | undefined, ctx: TickContext, eps: number): bool
   return skip.some((v) => Math.abs(v - ctx.value) <= eps)
 }
 
+/** Stage 6's one move: pass a `TickContext` through the function form, keep the plain form. */
+function evaluate<V extends DialUnits | string>(
+  prop: TickProp<V> | undefined,
+  ctx: TickContext,
+): V | undefined {
+  return typeof prop === "function" ? prop(ctx) : prop
+}
+
 /**
  * Stages 1 through 6 of the pipeline.
  *
@@ -220,14 +312,18 @@ function shouldSkip(skip: Skip | undefined, ctx: TickContext, eps: number): bool
  * `index` is within-tier and assigned during population; skipping leaves holes
  * rather than renumbering, so an index always names the same conceptual mark.
  */
-export function resolveTicks(input: ResolveInput, scale: Scale): ResolvedTick[] {
+export function resolveTicks<const I extends ResolveInput>(
+  input: I,
+  scale: Scale,
+): (ResolvedTick<ItemOf<I>> & ResolvedProps)[]
+export function resolveTicks(input: ResolveInput, scale: Scale): (ResolvedTick & ResolvedProps)[] {
   const eps = epsilonFor({ min: input.from ?? scale.min, max: input.to ?? scale.max })
 
   // 1–2. Population and bounds. A tier's `skip` is an instruction to this
   // stage's caller, not a prop; strip it so population does not fold it onto
-  // every item, where stage 6 would then evaluate it as a per-mark function.
+  // every item, where it would masquerade as an authored per-mark field.
   const tiers = input.tiers?.map(({ skip: _skip, ...rest }) => rest)
-  let ticks = populate(tiers ? { ...input, tiers } : input, scale)
+  let ticks: ResolvedTick[] = populate(tiers ? { ...input, tiers } : input, scale)
 
   // 3. Per-tier skip, before the merge.
   const tierSkips = (input.tiers ?? []).map((t) => t.skip)
@@ -251,23 +347,20 @@ export function resolveTicks(input: ResolveInput, scale: Scale): ResolvedTick[] 
 
   // 6. Prop resolution and function evaluation. Per-item beats tier, which
   // beats top-level; population already folded tier props onto each item, so
-  // the top level only fills what is still undefined. Only EVALUABLE_PROPS
-  // participate — anything else on the input is the component's business, not
-  // a per-mark prop, and touches no tick.
-  const topLevel = Object.entries(input).filter(([k]) => EVALUABLE_PROPS.has(k))
-
+  // the top level only fills what the mark left undefined. Exactly the six
+  // EVALUABLE_PROPS are read — resolution names its keys instead of iterating
+  // the item's, so a passthrough field is never evaluated — and `item` rides
+  // through untouched.
   return ticks.map((tick) => {
     const ctx = contextOf(tick, scale)
-    const out: ResolvedTick = { ...tick }
-    for (const [key, value] of topLevel) {
-      if (out[key] === undefined) out[key] = value
+    return {
+      ...tick,
+      length: evaluate(tick.length ?? input.length, ctx),
+      width: evaluate(tick.width ?? input.width, ctx),
+      offset: evaluate(tick.offset ?? input.offset, ctx),
+      inset: evaluate(tick.inset ?? input.inset, ctx),
+      r: evaluate(tick.r ?? input.r, ctx),
+      fill: evaluate(tick.fill ?? input.fill, ctx),
     }
-    for (const key of EVALUABLE_PROPS) {
-      const v = out[key]
-      if (typeof v === "function") {
-        out[key] = (v as (c: TickContext) => unknown)(ctx)
-      }
-    }
-    return out
   })
 }

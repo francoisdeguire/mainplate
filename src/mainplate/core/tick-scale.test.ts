@@ -316,7 +316,7 @@ describe("resolveTicks — skip placement", () => {
 
   it("does not leak a per-tier skip onto the resolved ticks", () => {
     const out = resolveTicks({ tiers: [{ every: 30, skip: () => false }] }, fullCircle)
-    expect(out[0]?.skip).toBeUndefined()
+    expect(out[0]).not.toHaveProperty("skip")
   })
 })
 
@@ -365,7 +365,7 @@ describe("resolveTicks — prop resolution", () => {
     )
     expect(called).toBe(false)
     // Component-level callbacks are not per-mark props and are not filled in.
-    expect(out[0]?.renderItem).toBeUndefined()
+    expect(out[0]).not.toHaveProperty("renderItem")
     // A per-item callback passes through untouched for the renderer to use.
     expect(out[0]?.onClick).toBe(arm)
   })
@@ -385,7 +385,7 @@ describe("resolveTicks — prop resolution", () => {
 
   it("does not copy unrecognised top-level keys onto the marks", () => {
     const out = resolveTicks({ count: 2, className: "dial-ticks" }, fullCircle)
-    expect(out[0]?.className).toBeUndefined()
+    expect(out[0]).not.toHaveProperty("className")
   })
 
   it("fills exactly the allowlisted props from the top level", () => {

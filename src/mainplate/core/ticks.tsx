@@ -8,7 +8,7 @@
  * one stroke-width, so a per-mark `width` could never merge if these were
  * strokes — and merging is the whole performance story for statics.
  */
-import { Fragment, type ReactNode, type SVGProps } from "react"
+import { Fragment, type ReactElement, type ReactNode, type SVGProps } from "react"
 import { useFrame } from "./frame"
 import {
   type Degrees,
@@ -21,12 +21,15 @@ import {
   quantize,
 } from "./geometry"
 import {
+  type ResolvedProps,
+  type ResolvedTick,
   type ResolveInput,
   resolveTicks,
   type Skip,
   type TickContext,
   type TickItem,
   type TickProp,
+  type TierItemOf,
   type TierSpec,
 } from "./tick-scale"
 
@@ -76,8 +79,12 @@ export type Placement = "radial" | "perimeter"
  */
 export type Orient = "radial" | "tangential" | "edge" | "upright"
 
-/** A mark's resolved geometry and props, as handed to `renderItem` and `useTicks`. */
-export type MarkGeometry = TickContext & {
+/**
+ * A mark's resolved geometry and props, as handed to `renderItem` and
+ * `useTicks`. Extends `TickContext<T>`, so `item` is here too: the authored
+ * item as a unit, typed by the population that produced it.
+ */
+export type MarkGeometry<T = TickItem> = TickContext<T> & {
   /** Where the mark sits, in dial units. */
   point: Point
   /** The inward unit normal of the outline where the mark stands. */
@@ -90,34 +97,48 @@ export type MarkGeometry = TickContext & {
    * `transform={\`rotate(${rotation} ${point.x} ${point.y})\`}`.
    */
   rotation: Degrees
-  /** Resolved per-mark visual props, after tier and function resolution. */
-  props: Record<string, unknown>
+  /**
+   * The six per-mark visual props, resolved: tier and top-level fill-ins
+   * applied, function forms evaluated. Distinct from `item`, which stays as
+   * authored.
+   */
+  props: ResolvedProps
 }
 
-type Population =
-  | { count: number; ticks?: never; tiers?: never }
-  | { ticks: readonly TickItem[]; count?: never; tiers?: never }
-  | { tiers: readonly (TierSpec & { skip?: Skip })[]; count?: never; ticks?: never }
+type CountPopulation = { count: number; ticks?: never; tiers?: never }
+type TicksPopulation<T extends TickItem> = { ticks: readonly T[]; count?: never; tiers?: never }
+type TiersPopulation<S extends TierSpec> = {
+  tiers: readonly (S & { skip?: Skip<TierItemOf<S>> })[]
+  count?: never
+  ticks?: never
+}
 
-type Anchor = { inset?: TickProp<DialUnits>; r?: never } | { r: TickProp<DialUnits>; inset?: never }
+type Anchor<T> =
+  | {
+      /** Anchor distance inward from the outline, in dial units. @default 0 */
+      inset?: TickProp<DialUnits, T>
+      r?: never
+    }
+  | {
+      /** Anchor radius from the centre, ignoring the outline, in dial units. */
+      r: TickProp<DialUnits, T>
+      inset?: never
+    }
 
 /**
- * Props for {@link Ticks}: a population (`count` | `ticks` | `tiers`), an
- * anchor (`inset` | `r`), per-mark geometry and paint, and any SVG prop.
+ * Everything but the population, parameterized by the item type `T` its marks
+ * carry — which is what `skip`, the function-valued props, and `renderItem`
+ * all see as `ctx.item`.
  *
  * The per-mark props are omitted from the `SVGProps` base: React declares
  * `width`, `offset`, `r` and `fill` as SVG attributes, and intersecting those
  * with `TickProp` would silently strip the function-valued forms.
- *
- * Any function-valued prop — a `skip` predicate, a function `length` or
- * `fill`, `renderItem` — forces the call site behind `"use client"`, exactly
- * like a factory-built `Outline`: functions cannot cross the RSC boundary,
- * and React's serialization error never names mainplate. The plain forms —
- * numbers, strings, arrays — all serialize, so a server page keeps them.
  */
-export type TicksProps = Population &
-  Anchor &
-  Omit<SVGProps<SVGGElement>, "children" | "fill" | "offset" | "orient" | "r" | "width"> & {
+type CommonProps<T> = Omit<
+  SVGProps<SVGGElement>,
+  "children" | "fill" | "offset" | "orient" | "r" | "width"
+> &
+  Anchor<T> & {
     from?: DomainValue
     to?: DomainValue
     /**
@@ -125,7 +146,7 @@ export type TicksProps = Population &
      * The array form serializes across the RSC boundary; the predicate form
      * is a function and forces `"use client"` at the call site.
      */
-    skip?: Skip
+    skip?: Skip<T>
     /** Which part of the mark sits on the anchor. @default "center" */
     align?: Align
     /** How marks are distributed: by ray, or evenly by arc length. @default "radial" */
@@ -133,19 +154,38 @@ export type TicksProps = Population &
     /** @default "radial" */
     orient?: Orient
     /** Radial extent, in dial units. @default 6 */
-    length?: TickProp<DialUnits>
+    length?: TickProp<DialUnits, T>
     /** Tangential extent, in dial units. @default 1 */
-    width?: TickProp<DialUnits>
+    width?: TickProp<DialUnits, T>
     /** Scalar tangential shift, in dial units. @default 0 */
-    offset?: TickProp<DialUnits>
+    offset?: TickProp<DialUnits, T>
     /** Paint. Marks sharing a fill merge into one path. @default "currentColor" */
-    fill?: TickProp<string>
+    fill?: TickProp<string, T>
     /**
      * Opt into one node per mark. A function, so it forces `"use client"` at
      * the call site — the same boundary rule as a factory-built `Outline`.
      */
-    renderItem?: (mark: MarkGeometry) => ReactNode
+    renderItem?: (mark: MarkGeometry<T>) => ReactNode
   }
+
+/**
+ * Props for {@link Ticks}: a population (`count` | `ticks` | `tiers`), an
+ * anchor (`inset` | `r`), per-mark geometry and paint, and any SVG prop.
+ *
+ * Generic over the authored item type, which is what each population's marks
+ * carry as `item`: a `ticks` array's element type `T`, a tier's own props
+ * plus the stepped `value` under `tiers`, and just `{ value }` under `count`.
+ *
+ * Any function-valued prop — a `skip` predicate, a function `length` or
+ * `fill`, `renderItem` — forces the call site behind `"use client"`, exactly
+ * like a factory-built `Outline`: functions cannot cross the RSC boundary,
+ * and React's serialization error never names mainplate. The plain forms —
+ * numbers, strings, arrays — all serialize, so a server page keeps them.
+ */
+export type TicksProps<T extends TickItem = TickItem, S extends TierSpec = TierSpec> =
+  | (CountPopulation & CommonProps<Pick<TickItem, "value">>)
+  | (TicksPopulation<T> & CommonProps<T>)
+  | (TiersPopulation<S> & CommonProps<TierItemOf<S>>)
 
 /**
  * Narrow the component's props down to just what the scale pipeline may see.
@@ -156,32 +196,51 @@ export type TicksProps = Population &
  * every mark. The pipeline gets scale input, nothing else.
  */
 function scaleInputOf(props: TicksProps): ResolveInput {
-  const { count, ticks, tiers, from, to, skip, inset, r, length, width, offset, fill } = props
-  const input: Record<string, unknown> = { from, to, skip }
-  if (count !== undefined) input.count = count
-  if (ticks !== undefined) input.ticks = ticks
-  if (tiers !== undefined) input.tiers = tiers
-  if (inset !== undefined) input.inset = inset
-  if (r !== undefined) input.r = r
-  if (length !== undefined) input.length = length
-  if (width !== undefined) input.width = width
-  if (offset !== undefined) input.offset = offset
-  if (fill !== undefined) input.fill = fill
-  return input as ResolveInput
+  const input: ResolveInput = {}
+  if (props.from !== undefined) input.from = props.from
+  if (props.to !== undefined) input.to = props.to
+  if (props.skip !== undefined) input.skip = props.skip
+  if (props.count !== undefined) input.count = props.count
+  if (props.ticks !== undefined) input.ticks = props.ticks
+  if (props.tiers !== undefined) input.tiers = props.tiers
+  if (props.inset !== undefined) input.inset = props.inset
+  if (props.r !== undefined) input.r = props.r
+  if (props.length !== undefined) input.length = props.length
+  if (props.width !== undefined) input.width = props.width
+  if (props.offset !== undefined) input.offset = props.offset
+  if (props.fill !== undefined) input.fill = props.fill
+  return input
 }
 
-/** Headless access to the same geometry `<Ticks>` renders. */
+/**
+ * Headless access to the same geometry `<Ticks>` renders.
+ *
+ * Generic the same way {@link TicksProps} is: the marks' `item` is the
+ * authored item, typed by the population — the array element under `ticks`,
+ * the tier's own props plus `value` under `tiers`, `{ value }` under `count`.
+ * The `const` type parameter keeps an inline literal array's shape.
+ */
+export function useTicks(
+  props: CountPopulation & CommonProps<Pick<TickItem, "value">>,
+): MarkGeometry<Pick<TickItem, "value">>[]
+export function useTicks<const T extends TickItem>(
+  props: TicksPopulation<T> & CommonProps<T>,
+): MarkGeometry<T>[]
+export function useTicks<const S extends TierSpec>(
+  props: TiersPopulation<S> & CommonProps<TierItemOf<S>>,
+): MarkGeometry<TierItemOf<S>>[]
+export function useTicks(props: TicksProps): MarkGeometry[]
 export function useTicks(props: TicksProps): MarkGeometry[] {
   const { frame, angleFor } = useFrame()
   const { outline } = frame
   const orient = props.orient ?? "radial"
   const placement = props.placement ?? "radial"
 
-  return resolveTicks(scaleInputOf(props), frame).map((tick) => {
-    const { value, t, index, tier, at, ...rest } = tick
-    const angle = at ?? angleFor(value)
-    const anchorRadius = rest.r as DialUnits | undefined
-    const inset = (rest.inset as DialUnits | undefined) ?? 0
+  const resolved: (ResolvedTick & ResolvedProps)[] = resolveTicks(scaleInputOf(props), frame)
+  return resolved.map((tick) => {
+    const angle = tick.at ?? angleFor(tick.value)
+    const anchorRadius = tick.r
+    const inset = tick.inset ?? 0
 
     // `angle` stays the value's angle whatever the placement — it is the
     // mark's provenance, and skip predicates and function props key off it.
@@ -205,15 +264,23 @@ export function useTicks(props: TicksProps): MarkGeometry[] {
     // numbers reach consumer JSX, and raw trig output differs between the
     // server's engine and the browser's — a guaranteed hydration mismatch.
     return {
-      value,
-      t,
-      index,
-      tier,
+      item: tick.item,
+      value: tick.value,
+      t: tick.t,
+      index: tick.index,
+      tier: tick.tier,
       angle,
       point: { x: quantize(point.x), y: quantize(point.y) },
       normal: { x: quantize(normal.x), y: quantize(normal.y) },
       rotation: quantize(orientationOf(orient, orientedAt, normal)),
-      props: rest,
+      props: {
+        length: tick.length,
+        width: tick.width,
+        offset: tick.offset,
+        inset: tick.inset,
+        r: tick.r,
+        fill: tick.fill,
+      },
     }
   })
 }
@@ -277,8 +344,21 @@ function markPath(
 /**
  * Tick marks distributed over the frame, anchored on the outline (`inset`) or
  * a fixed radius (`r`), merged into as few `<path>` nodes as paint allows.
+ *
+ * Generic over the authored item type: a literal `ticks` array keeps its
+ * shape (a `const` type parameter), so `renderItem` sees `mark.item` with the
+ * fields the array was written with, still typed. Under `tiers` the item is
+ * the tier's own props plus the stepped `value`; under `count` it is just
+ * `{ value }`, because nothing more was authored.
  */
-export function Ticks(props: TicksProps) {
+export function Ticks(props: CountPopulation & CommonProps<Pick<TickItem, "value">>): ReactElement
+export function Ticks<const T extends TickItem>(
+  props: TicksPopulation<T> & CommonProps<T>,
+): ReactElement
+export function Ticks<const S extends TierSpec>(
+  props: TiersPopulation<S> & CommonProps<TierItemOf<S>>,
+): ReactElement
+export function Ticks(props: TicksProps): ReactElement {
   const {
     align = "center",
     orient: _orient,
@@ -329,12 +409,12 @@ export function Ticks(props: TicksProps) {
   // <path> and the same sixty in three colours cost three.
   const groups = new Map<string, string[]>()
   for (const mark of marks) {
-    const fill = (mark.props.fill as string | undefined) ?? "currentColor"
+    const fill = mark.props.fill ?? "currentColor"
     const d = markPath(
       mark,
-      (mark.props.length as DialUnits | undefined) ?? 6,
-      (mark.props.width as DialUnits | undefined) ?? 1,
-      (mark.props.offset as DialUnits | undefined) ?? 0,
+      mark.props.length ?? 6,
+      mark.props.width ?? 1,
+      mark.props.offset ?? 0,
       align,
     )
     const bucket = groups.get(fill)

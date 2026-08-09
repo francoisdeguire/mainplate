@@ -25,13 +25,17 @@ export { circleOutline, rectOutline, resolveOutline } from "./outline"
 export type { Source, WritableSource } from "./source"
 export { createSource, isSource } from "./source"
 export type {
+  EvaluableProps,
+  ItemOf,
   PopulateInput,
+  ResolvedProps,
   ResolvedTick,
   ResolveInput,
   Skip,
   TickContext,
   TickItem,
   TickProp,
+  TierItemOf,
   TierSpec,
 } from "./tick-scale"
 export { EVALUABLE_PROPS, populate, resolveTicks } from "./tick-scale"

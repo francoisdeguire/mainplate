@@ -300,7 +300,7 @@ export default function Gallery() {
                 { value: 270, label: "W" },
               ]}
               renderItem={(mark) => {
-                const label = String(mark.props.label)
+                const label = mark.item.label
                 const p = opticalCentre(
                   mark.angle,
                   mark.rotation,
