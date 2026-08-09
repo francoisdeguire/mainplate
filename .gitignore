@@ -19,3 +19,17 @@ pnpm-debug.log*
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+.claude/
+.superpowers/
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+bun.lockb.bak
+
+# Agent rule files, including the AGENTS.md/CLAUDE.md pair Next generates in www/.
+# Bare patterns so they match at any depth.
+AGENTS.md
+CLAUDE.md
+.planning/

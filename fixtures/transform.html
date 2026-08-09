@@ -1,0 +1,93 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>mainplate — §2.9 transform recipe fixture</title>
+<style>
+  body { font: 14px/1.6 system-ui, sans-serif; margin: 2rem; background: #0b0b0c; color: #e8e8ea }
+  h1 { font-size: 16px; font-weight: 600 }
+  .row { display: flex; gap: 2rem; flex-wrap: wrap; margin-top: 1.5rem }
+  figure { margin: 0 }
+  svg { background: #17171a; border: 1px solid #2a2a30; display: block }
+  figcaption { margin-top: .5rem; font-size: 12px; color: #9a9aa2; max-width: 220px }
+  b { color: #e8e8ea }
+</style>
+
+<h1>§2.9 transform recipe — open in Chrome, Safari, and Firefox</h1>
+<p>Every case must match its caption <b>in all three browsers</b>. Any mismatch means the recipe
+   is rejected and the SVG <code>transform="rotate()"</code> fallback ships instead.</p>
+
+<div class="row">
+
+  <figure>
+    <svg viewBox="-110 -110 220 220" width="200" height="200">
+      <circle r="100" fill="none" stroke="#2a2a30"/>
+      <line x1="0" y1="0" x2="0" y2="-100" stroke="#2a2a30"/>
+      <line x1="0" y1="0" x2="100" y2="0" stroke="#2a2a30"/>
+      <g transform="translate(0 0)">
+        <g style="rotate: 90deg; transform-box: view-box; transform-origin: 0 0">
+          <g transform="translate(0 0)">
+            <rect x="-3" y="-90" width="6" height="90" fill="#e0452f"/>
+          </g>
+        </g>
+      </g>
+    </svg>
+    <figcaption><b>A. Root hand, 90°.</b> Must lie exactly along the horizontal guide, pointing
+      right. If it points up, rotation is not being applied; if left or down, the sign or offset
+      is wrong.</figcaption>
+  </figure>
+
+  <figure>
+    <svg viewBox="-110 -110 220 220" width="200" height="200">
+      <circle r="100" fill="none" stroke="#2a2a30"/>
+      <circle cx="-50" cy="0" r="34" fill="none" stroke="#2a2a30"/>
+      <g transform="translate(-50 0)">
+        <g style="rotate: 90deg; transform-box: view-box; transform-origin: 0 0">
+          <g transform="translate(0 0)">
+            <rect x="-2" y="-30" width="4" height="30" fill="#6fd08c"/>
+          </g>
+        </g>
+      </g>
+    </svg>
+    <figcaption><b>B. Subdial hand, 90°.</b> Must pivot at the small circle's centre (−50, 0) and
+      point right. If it pivots at the face centre or flies off, translate/rotate composition is
+      wrong.</figcaption>
+  </figure>
+
+  <figure>
+    <svg viewBox="-110 -110 220 220" width="200" height="200">
+      <circle r="100" fill="none" stroke="#2a2a30"/>
+      <circle r="3" fill="#e8e8ea"/>
+      <g transform="translate(0 0)">
+        <g style="rotate: 45deg; transform-box: view-box; transform-origin: 0 0">
+          <g transform="translate(0 -40)">
+            <rect x="-3" y="0" width="6" height="80" fill="#4a9eff"/>
+          </g>
+        </g>
+      </g>
+    </svg>
+    <figcaption><b>C. Pivot correction, 45°.</b> Artwork is authored at y 0…80 with
+      <code>pivot=[0,40]</code>, so stage 3 translates by −40. The bar's midpoint must sit on the
+      white centre dot.</figcaption>
+  </figure>
+
+  <figure>
+    <svg viewBox="-110 -110 220 220" width="200" height="200">
+      <circle r="100" fill="none" stroke="#2a2a30"/>
+      <circle r="3" fill="#e8e8ea"/>
+      <g transform="translate(0 0)">
+        <g style="rotate: 45deg; transform-box: view-box; transform-origin: 0 0">
+          <rect x="-3" y="-90" width="6" height="90" fill="#e0452f"/>
+        </g>
+      </g>
+      <g transform="translate(0 0)">
+        <g style="rotate: 45deg; transform-box: view-box; transform-origin: 0 0">
+          <rect x="-1" y="-90" width="2" height="115" fill="#ffd166"/>
+        </g>
+      </g>
+    </svg>
+    <figcaption><b>D. Bbox independence — the critical case.</b> Two hands at 45°: one plain, one
+      with a 25-unit tail, so their bounding boxes differ. They must be <b>perfectly collinear</b>
+      and both pass through the centre dot. If they diverge, <code>transform-box</code> is
+      resolving against each element's own bbox and the recipe is rejected.</figcaption>
+  </figure>
+
+</div>
