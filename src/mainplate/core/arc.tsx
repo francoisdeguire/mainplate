@@ -2,7 +2,7 @@
 
 /**
  * `<Arc>`: the library's only stroked primitive.
- * May import: frame, geometry, outline, source, ticks. Must not import: time/.
+ * May import: errors, frame, geometry, outline, source, ticks. Must not import: time/.
  *
  * Everything else fills — `<Dial>` makes `stroke` a compile error, because a
  * stroked ring at an inset *is* a full-sweep `<Arc>`. So this component
@@ -14,6 +14,7 @@
  * completely, and that divergence is the reason both exist.
  */
 import { type SVGProps, useEffect, useRef } from "react"
+import { bothAnchorsMessage, failSoft } from "./errors"
 import { useFrame } from "./frame"
 import {
   type Degrees,
@@ -256,12 +257,24 @@ export function Arc({
   from,
   to,
   r,
-  inset = 0,
+  inset,
   align = "center",
   stroke = "currentColor",
   strokeWidth = 1,
   ...rest
 }: ArcProps) {
+  // The XOR union already refuses both anchors at once; an untyped spread
+  // gets past it, and silently taking the `r` branch was the one
+  // degrade-in-silence this library had left. `r` survives, per the
+  // precedence documented on `bothAnchorsMessage`, and `arcPath` already
+  // prefers it — so degrading is just proceeding, out loud.
+  if (r !== undefined && inset !== undefined) {
+    failSoft(bothAnchorsMessage("<Arc>", r, inset), "Ignoring `inset`.")
+  }
+  // Defaulted here, not in the parameter list: the check above has to see
+  // the difference between an omitted `inset` and a written `inset: 0`.
+  const anchorInset = inset ?? 0
+
   const { frame, angleFor } = useFrame()
   const pathRef = useRef<SVGPathElement | null>(null)
 
@@ -292,7 +305,7 @@ export function Arc({
     angleFor(currentFrom),
     angleFor(currentTo),
     r,
-    inset,
+    anchorInset,
     align,
     strokeWidth,
   )
@@ -324,7 +337,7 @@ export function Arc({
       // bypasses React entirely, so nothing else would cover it.
       node.setAttribute(
         "d",
-        arcPath(outline, angleFor(f), angleFor(t), r, inset, align, strokeWidth),
+        arcPath(outline, angleFor(f), angleFor(t), r, anchorInset, align, strokeWidth),
       )
     }
     // Written once on subscription, not only on change: a value that moved
@@ -346,14 +359,13 @@ export function Arc({
     outline,
     angleFor,
     r,
-    inset,
+    anchorInset,
     align,
     strokeWidth,
   ])
 
   return (
     <path
-      data-mp="arc"
       stroke={stroke}
       strokeWidth={strokeWidth}
       {...rest}
@@ -361,6 +373,9 @@ export function Arc({
       // and this is the second lock, for the untyped spread that gets past
       // them. `d` is the component's whole output; `fill` on an open path
       // paints the chord segment, the exact mistake the type exists to stop.
+      // `data-mp` sits here too — TypeScript's data-* exemption means the
+      // type never refused it at all — and stays a compile-time static.
+      data-mp="arc"
       ref={pathRef}
       fill="none"
       d={d}

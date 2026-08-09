@@ -286,6 +286,57 @@ describe("<Numerals> — explicit anchoring", () => {
       ),
     ).toThrow(/clearance/i)
   })
+
+  it("prefers track, logs once and renders in production when anchors are combined", () => {
+    vi.stubEnv("NODE_ENV", "production")
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {})
+    try {
+      const face = (anchor: object) => (
+        <Mainplate min={0} max={220} startAngle={-135} sweepAngle={270}>
+          <Numerals count={3} {...anchor} />
+        </Mainplate>
+      )
+      const both = render(face({ r: 70, track: { r: 80, width: 2 }, clearance: 3 }))
+      const solvedOnly = render(face({ track: { r: 80, width: 2 }, clearance: 3 }))
+      const coords = (c: HTMLElement) =>
+        texts(c).map((t) => `${t.getAttribute("x")},${t.getAttribute("y")}`)
+      expect(coords(both.container)).toEqual(coords(solvedOnly.container))
+
+      render(face({ r: 70, track: { r: 80, width: 2 }, clearance: 3 }))
+      expect(spy).toHaveBeenCalledTimes(1)
+      expect(spy.mock.calls[0]?.[0]).toMatch(/mainplate: <Numerals>/)
+      expect(spy.mock.calls[0]?.[0]).toMatch(/Using `track`/)
+    } finally {
+      spy.mockRestore()
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it("ignores clearance without track in production, saying so once", () => {
+    vi.stubEnv("NODE_ENV", "production")
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {})
+    try {
+      const misused = render(
+        <Mainplate max={60}>
+          {/* @ts-expect-error — clearance is the solved mode's distance; it needs track */}
+          <Numerals count={4} clearance={3} />
+        </Mainplate>,
+      )
+      const plain = render(
+        <Mainplate max={60}>
+          <Numerals count={4} />
+        </Mainplate>,
+      )
+      const coords = (c: HTMLElement) =>
+        texts(c).map((t) => `${t.getAttribute("x")},${t.getAttribute("y")}`)
+      expect(coords(misused.container)).toEqual(coords(plain.container))
+      expect(spy).toHaveBeenCalledTimes(1)
+      expect(spy.mock.calls[0]?.[0]).toMatch(/Ignoring `clearance`/)
+    } finally {
+      spy.mockRestore()
+      vi.unstubAllEnvs()
+    }
+  })
 })
 
 describe("<Numerals> — solved anchoring holds the clearance constant", () => {

@@ -2,8 +2,15 @@
 import { render } from "@testing-library/react"
 import type { ReactElement } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
+import { Arc } from "./arc"
+import { Dial } from "./dial"
 import { Mainplate, useFrame } from "./frame"
+import { Hand } from "./hand"
+import { Numerals } from "./numerals"
 import { circleOutline, rectOutline } from "./outline"
+import { Place } from "./place"
+import { Subdial } from "./subdial"
+import { Ticks } from "./ticks"
 
 function Probe({ onFrame }: { onFrame: (v: ReturnType<typeof useFrame>) => void }) {
   onFrame(useFrame())
@@ -253,5 +260,39 @@ describe("useFrame", () => {
 
   it("throws a useful message outside a frame", () => {
     expect(() => render(<Probe onFrame={() => {}} />)).toThrow(/must be used inside <Mainplate>/)
+  })
+})
+
+describe("data-mp is the library's, not the caller's", () => {
+  it("keeps every primitive's static data-mp when a spread tries to override it", () => {
+    // TypeScript's data-* excess-property exemption lets `data-mp="evil"`
+    // through on every one of these despite being undeclared — the type
+    // cannot refuse it, so the second lock after the props spread has to.
+    const { container } = render(
+      <Mainplate data-mp="evil" max={60}>
+        <Dial data-mp="evil" />
+        <Ticks data-mp="evil" count={4} />
+        <Ticks
+          data-mp="evil"
+          count={4}
+          renderItem={({ point }) => <circle cx={point.x} cy={point.y} r={1} />}
+        />
+        <Numerals data-mp="evil" count={4} />
+        <Numerals
+          data-mp="evil"
+          count={4}
+          renderItem={({ point }) => <circle cx={point.x} cy={point.y} r={1} />}
+        />
+        <Arc data-mp="evil" r={80} />
+        <Hand data-mp="evil" value={30} />
+        <Place data-mp="evil" at="3h" />
+        <Subdial data-mp="evil" at="9h" inset={50} r={26} />
+      </Mainplate>,
+    )
+    expect(container.querySelector('[data-mp="evil"]')).toBeNull()
+    const names = ["mainplate", "dial", "ticks", "numerals", "arc", "hand", "place", "subdial"]
+    for (const name of names) {
+      expect(container.querySelector(`[data-mp="${name}"]`)).not.toBeNull()
+    }
   })
 })

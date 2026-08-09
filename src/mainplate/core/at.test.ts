@@ -147,4 +147,23 @@ describe("resolveAt — the anchor", () => {
       vi.unstubAllEnvs()
     }
   })
+
+  it("logs again for a different misuse — the offending values are in the dedup key", () => {
+    // A static key would silence the whole *class* after the first offence,
+    // for the life of the page — a second, different mistake deserves its own
+    // line, which is why the message interpolates the values it received.
+    vi.stubEnv("NODE_ENV", "production")
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {})
+    try {
+      // @ts-expect-error — r and inset are exactly-one-of
+      resolveAt(0, circle, { r: 50, inset: 5 })
+      // @ts-expect-error — r and inset are exactly-one-of
+      resolveAt(0, circle, { r: 60, inset: 5 })
+      expect(spy).toHaveBeenCalledTimes(2)
+      expect(spy.mock.calls[0]?.[0]).not.toBe(spy.mock.calls[1]?.[0])
+    } finally {
+      spy.mockRestore()
+      vi.unstubAllEnvs()
+    }
+  })
 })

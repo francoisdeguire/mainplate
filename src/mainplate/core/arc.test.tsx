@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, render } from "@testing-library/react"
 import { renderToStaticMarkup } from "react-dom/server"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { Arc } from "./arc"
 import { Mainplate } from "./frame"
 import { type Point, polar, quantize } from "./geometry"
@@ -220,6 +220,48 @@ describe("<Arc> — align, the only control over stroke placement", () => {
   })
 })
 
+describe("<Arc> — the anchors are exactly-one-of", () => {
+  it("throws in development when both r and inset are given", () => {
+    expect(() =>
+      render(
+        <Mainplate>
+          {/* @ts-expect-error — r and inset are exactly-one-of */}
+          <Arc r={80} inset={10} />
+        </Mainplate>,
+      ),
+    ).toThrow(/only one of/i)
+  })
+
+  it("keeps r, logs once and renders in production when both are given", () => {
+    vi.stubEnv("NODE_ENV", "production")
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {})
+    try {
+      const both = render(
+        <Mainplate>
+          {/* @ts-expect-error — r and inset are exactly-one-of */}
+          <Arc r={80} inset={10} />
+        </Mainplate>,
+      )
+      // The survivor is `r`: the full-sweep circular form at radius 80,
+      // byte-identical to what `r` alone draws.
+      expect(dOf(both.container)).toBe("M 0 -80 A 80 80 0 1 1 0 80 A 80 80 0 1 1 0 -80 Z")
+
+      render(
+        <Mainplate>
+          {/* @ts-expect-error — r and inset are exactly-one-of */}
+          <Arc r={80} inset={10} />
+        </Mainplate>,
+      )
+      expect(spy).toHaveBeenCalledTimes(1)
+      expect(spy.mock.calls[0]?.[0]).toMatch(/mainplate: <Arc>/)
+      expect(spy.mock.calls[0]?.[0]).toMatch(/Ignoring `inset`/)
+    } finally {
+      spy.mockRestore()
+      vi.unstubAllEnvs()
+    }
+  })
+})
+
 describe("<Arc> — the DOM contract", () => {
   it("emits a static data-mp and the stroked defaults: currentColor stroke, no fill", () => {
     const { container } = render(
@@ -254,16 +296,6 @@ describe("<Arc> — the DOM contract", () => {
       </Mainplate>,
     )
     expect(arc(container)?.getAttribute("fill")).toBe("none")
-  })
-
-  it("refuses r and inset together at compile time — one anchor, not two knobs", () => {
-    const { container } = render(
-      <Mainplate>
-        {/* @ts-expect-error — r is frame-anchored, inset is outline-anchored; pick one */}
-        <Arc r={91} inset={9} />
-      </Mainplate>,
-    )
-    expect(arc(container)).not.toBeNull()
   })
 })
 

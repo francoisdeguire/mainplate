@@ -43,5 +43,8 @@ export type DialProps = Omit<SVGProps<SVGPathElement>, "d" | "fill" | "stroke" |
  */
 export function Dial({ inset = 0, fill = "currentColor", ...rest }: DialProps) {
   const outline = useOutline()
-  return <path data-mp="dial" d={outline.path(inset)} fill={fill} {...rest} />
+  // `data-mp` after the spread: TypeScript's data-* exemption lets a spread
+  // smuggle `data-mp` past the props type, so the second lock keeps the one
+  // attribute the library guarantees — and it stays a compile-time static.
+  return <path d={outline.path(inset)} fill={fill} {...rest} data-mp="dial" />
 }

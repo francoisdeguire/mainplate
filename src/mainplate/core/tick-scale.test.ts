@@ -181,6 +181,36 @@ describe("populate — input exclusivity", () => {
   it("throws when none is given", () => {
     expect(() => populate({}, fullCircle)).toThrow(/exactly one of/i)
   })
+
+  it("keeps `ticks` and logs once in production when populations are combined", () => {
+    vi.stubEnv("NODE_ENV", "production")
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {})
+    try {
+      const out = populate({ count: 4, ticks: [{ value: 5 }] }, fullCircle)
+      expect(values(out)).toEqual([5])
+
+      populate({ count: 4, ticks: [{ value: 5 }] }, fullCircle)
+      expect(spy).toHaveBeenCalledTimes(1)
+      expect(spy.mock.calls[0]?.[0]).toMatch(/exactly one of/i)
+      expect(spy.mock.calls[0]?.[0]).toMatch(/Using `ticks`/)
+    } finally {
+      spy.mockRestore()
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it("populates nothing and logs in production when no population is given", () => {
+    vi.stubEnv("NODE_ENV", "production")
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {})
+    try {
+      expect(populate({}, fullCircle)).toEqual([])
+      expect(spy).toHaveBeenCalledTimes(1)
+      expect(spy.mock.calls[0]?.[0]).toMatch(/Received none/)
+    } finally {
+      spy.mockRestore()
+      vi.unstubAllEnvs()
+    }
+  })
 })
 
 describe("resolveTicks — skip, array form", () => {

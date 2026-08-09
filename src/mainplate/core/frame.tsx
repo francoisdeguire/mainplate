@@ -234,10 +234,13 @@ export function Mainplate({
       viewBox={viewBox}
       role="img"
       aria-label={label}
-      data-mp="mainplate"
       xmlns="http://www.w3.org/2000/svg"
       {...sized}
       {...rest}
+      // After the spreads: the data-* exemption lets a spread smuggle
+      // `data-mp` past the props type, so the second lock keeps the one
+      // attribute the library guarantees — still a compile-time static.
+      data-mp="mainplate"
     >
       <FrameContext value={frame}>{body}</FrameContext>
     </svg>

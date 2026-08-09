@@ -2,7 +2,7 @@
 
 /**
  * Numerals: the numbers on a dial, placed geometrically.
- * May import: clearance, frame, geometry, tick-scale, ticks. Must not import: time/.
+ * May import: clearance, errors, frame, geometry, tick-scale, ticks. Must not import: time/.
  *
  * A different renderer over the same pipeline as `<Ticks>` — population,
  * `skip`, tiers and function props are the same code, not a re-implementation.
@@ -13,6 +13,7 @@
  */
 import { Fragment, type ReactElement, type ReactNode, type SVGProps } from "react"
 import { clearanceRadius, estimateInk, type Ink, type TickFace } from "./clearance"
+import { failSoft } from "./errors"
 import { useFrame } from "./frame"
 import {
   type Degrees,
@@ -272,20 +273,28 @@ export function Numerals(props: NumeralsProps): ReactElement {
     ...svgProps
   } = props
 
-  const anchors = [props.r, props.inset, props.track].filter((a) => a !== undefined).length
-  if (anchors > 1) {
-    throw new Error(
-      "mainplate: <Numerals> takes only one of `r`, `inset`, or `track`. `r` is frame-anchored " +
+  const anchors = (["r", "inset", "track"] as const).filter((k) => props[k] !== undefined)
+  if (anchors.length > 1) {
+    // `track` survives over `r` over `inset`, per the precedence documented
+    // on `bothAnchorsMessage` — and the anchor branch below already prefers
+    // them in that order, so degrading is just proceeding, out loud.
+    failSoft(
+      "mainplate: <Numerals> takes only one of `r`, `inset`, or `track` — received " +
+        `${anchors.map((k) => `\`${k}\``).join(" and ")}. \`r\` is frame-anchored ` +
         "and `inset` outline-anchored, both placing the glyph box centre outright; `track` hands " +
         "the radius to the clearance solver instead, so combining it with either would give one " +
         "label two positions.",
+      `Using \`${track !== undefined ? "track" : "r"}\`.`,
     )
   }
   if (clearance !== undefined && track === undefined) {
-    throw new Error(
-      "mainplate: <Numerals> `clearance` is the ink-to-tick distance the solver holds against " +
-        "`track`; without a track there is nothing to clear. Pass `track`, or anchor with `r` " +
-        "or `inset` and drop `clearance`.",
+    // `clearance` is only ever read inside the solved branch, so the
+    // production fallback is simply the anchor the caller did give.
+    failSoft(
+      `mainplate: <Numerals> \`clearance\` (${clearance}) is the ink-to-tick distance the ` +
+        "solver holds against `track`; without a track there is nothing to clear. Pass " +
+        "`track`, or anchor with `r` or `inset` and drop `clearance`.",
+      "Ignoring `clearance`.",
     )
   }
 
@@ -312,7 +321,8 @@ export function Numerals(props: NumeralsProps): ReactElement {
 
     // The anchor. Solved mode owns the radius — the solver's assumption is a
     // label inward of its tick along the ray, so the centre is frame-radial by
-    // construction; per-item `r`/`inset` are pipeline fields it does not read.
+    // construction; per-item `r` it never reads, and per-item `inset` reaches
+    // only the `orient="edge"` normal above, never the radius.
     let centre: Point
     if (track !== undefined) {
       const r = clearanceRadius({ ink, angle, rotation, tick: track, clearance: clearance ?? 0 })
@@ -362,7 +372,10 @@ export function Numerals(props: NumeralsProps): ReactElement {
 
   if (renderItem) {
     return (
-      <g data-mp="numerals" {...svgProps}>
+      // `data-mp` after the spread, on both branches: the data-* exemption
+      // lets a spread smuggle it past the type, so the second lock keeps the
+      // one attribute the library guarantees — still a compile-time static.
+      <g {...svgProps} data-mp="numerals">
         {marks.map((mark) => (
           // Not `value`: `at` exists so two marks can share a value at
           // different positions. Not bare `index`: it repeats across tiers.
@@ -374,7 +387,7 @@ export function Numerals(props: NumeralsProps): ReactElement {
   }
 
   return (
-    <g data-mp="numerals" {...svgProps}>
+    <g {...svgProps} data-mp="numerals">
       {marks.map((mark) => (
         <text
           key={`${mark.tier}-${mark.index}`}

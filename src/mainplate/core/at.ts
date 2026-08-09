@@ -1,12 +1,13 @@
 /**
  * `at`: the one way to say *where* on a face something goes.
- * May import: geometry, outline, frame (types only). Must not import: react, time/.
+ * May import: errors, geometry, outline, frame (types only). Must not import: react, time/.
  *
  * Position on a dial is asked for in three registers — an angle, a clock
  * position, or a literal point — and `<Place>`, `<Subdial>`, `<Numerals>` and
  * `<Arc>` all have to answer the same way, or the vocabulary is a per-component
  * dialect (§2.6). This module is that single answer.
  */
+import { bothAnchorsMessage, failSoft } from "./errors"
 import type { Frame } from "./frame"
 import { type Degrees, type DialUnits, type Point, polar, quantize } from "./geometry"
 
@@ -55,29 +56,6 @@ export type Anchor =
 const RAD_TO_DEG = 180 / Math.PI
 
 /**
- * Production warnings already spoken, keyed by their whole message.
- *
- * `resolveAt` runs per primitive per render — sixty times a second on a face
- * driven by a hand — so an undeduped log is a log that buries the page. Keyed
- * by message rather than a flag, so a second, different misuse still speaks up.
- */
-const warned = new Set<string>()
-
-/**
- * Both anchors at once is a programmer error, and the production half of the
- * error ruling has to pick a survivor.
- *
- * `r` wins. `inset` has a natural default — an omitted anchor *is* `inset: 0` —
- * so it is the value that can arrive by accident, from a spread or a shared
- * props object. `r` only ever appears because somebody wrote a number.
- */
-function warnBothAnchors(message: string) {
-  if (warned.has(message)) return
-  warned.add(message)
-  console.error(`${message} Ignoring \`inset\`.`)
-}
-
-/**
  * Resolve an `at` into the angle and the point every primitive positions with.
  *
  * The angle comes back even for a tuple, because position and orientation are
@@ -92,17 +70,12 @@ export function resolveAt(
   const { r, inset } = anchor
 
   if (r !== undefined && inset !== undefined) {
-    const received =
-      "mainplate: an `at` anchor takes only one of `r` or `inset`. `r` is frame-anchored — a " +
-      "fixed radius from the centre, ignoring the outline. `inset` is outline-anchored — a " +
-      "distance inward from the edge, so it follows the shape. On a circle they can agree; on " +
-      "any other outline they cannot, so there is no sensible way to honour both."
-
-    if (process.env.NODE_ENV !== "production") throw new Error(received)
-
-    // Deliberately outside the guard: degrading beats taking down the route,
-    // but degrading in silence is the failure class the guard exists to catch.
-    warnBothAnchors(received)
+    // `r` survives, per the precedence documented on `bothAnchorsMessage`:
+    // `inset` has a natural default, so it is the value that can arrive by
+    // accident; `r` only ever appears because somebody wrote a number. The
+    // resolution below already prefers it, so degrading is just proceeding —
+    // out loud.
+    failSoft(bothAnchorsMessage("an `at` anchor", r, inset), "Ignoring `inset`.")
   }
 
   // A tuple is already the answer. It bypasses the anchor completely — asking

@@ -112,12 +112,14 @@ export function Place({
 
   return (
     <g
-      data-mp="place"
       fill={fill}
       {...rest}
       // After the spread, not before: the type already refuses a caller's
       // `transform`, and this is the second lock, for the untyped spread that
-      // gets past it. Everything else a caller passes still wins.
+      // gets past it. `data-mp` sits behind the same lock — the data-*
+      // exemption means the type never refused it at all — and stays a
+      // compile-time static. Everything else a caller passes still wins.
+      data-mp="place"
       transform={`translate(${fmt(point.x + tangent.x)} ${fmt(point.y + tangent.y)})`}
     >
       {/* Rotation about this group's own local origin. `transform-box` and

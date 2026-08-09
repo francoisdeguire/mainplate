@@ -2,13 +2,14 @@
 
 /**
  * Tick marks: repeated marks distributed over the frame.
- * May import: geometry, frame, tick-scale, outline. Must not import: time/.
+ * May import: errors, geometry, frame, tick-scale, outline. Must not import: time/.
  *
  * Marks are filled shapes, not stroked lines. A single <path> carries exactly
  * one stroke-width, so a per-mark `width` could never merge if these were
  * strokes — and merging is the whole performance story for statics.
  */
 import { Fragment, type ReactElement, type ReactNode, type SVGProps } from "react"
+import { bothAnchorsMessage, failSoft } from "./errors"
 import { useFrame } from "./frame"
 import {
   type Degrees,
@@ -379,20 +380,21 @@ export function Ticks(props: TicksProps): ReactElement {
     ...svgProps
   } = props
 
-  if (props.r !== undefined && props.inset !== undefined) {
-    throw new Error(
-      "mainplate: <Ticks> takes only one of `r` or `inset`. `r` is frame-anchored — a fixed " +
-        "radius from the centre, ignoring the outline. `inset` is outline-anchored — a distance " +
-        "inward from the edge, so it follows the shape. On a circle they can agree; on any " +
-        "other outline they cannot, so there is no sensible way to honour both.",
-    )
+  if (_r !== undefined && _inset !== undefined) {
+    // `r` survives, per the precedence documented on `bothAnchorsMessage` —
+    // and `useTicks` already prefers an `r` anchor when both fields are
+    // present, so degrading is just proceeding, out loud.
+    failSoft(bothAnchorsMessage("<Ticks>", _r, _inset), "Ignoring `inset`.")
   }
 
   const marks = useTicks(props)
 
   if (renderItem) {
     return (
-      <g data-mp="ticks" {...svgProps}>
+      // `data-mp` after the spread, on both branches: the data-* exemption
+      // lets a spread smuggle it past the type, so the second lock keeps the
+      // one attribute the library guarantees — still a compile-time static.
+      <g {...svgProps} data-mp="ticks">
         {marks.map((mark) => (
           // Not `value`: `at` exists so two marks can share a value at
           // different positions. Not bare `index`: it repeats across tiers.
@@ -423,7 +425,7 @@ export function Ticks(props: TicksProps): ReactElement {
   }
 
   return (
-    <g data-mp="ticks" {...svgProps}>
+    <g {...svgProps} data-mp="ticks">
       {[...groups].map(([fill, ds]) => (
         <path key={fill} d={ds.join(" ")} fill={fill} />
       ))}
