@@ -89,13 +89,20 @@ export type ArcProps = Omit<
      * update here recomputes and reparses path data, which is repaint-bound.
      * Pair it with tick-cadence sources (a battery level, a chronograph
      * totaliser), not animation-frame ones; a needle that moves every frame
-     * belongs on `<Hand>`. @default the frame's `min`
+     * belongs on `<Hand>`.
+     *
+     * Unlike `<Hand>`, a source's `domain` is **not** consulted: `from` and
+     * `to` may be two sources with two domains, and one scale cannot honour
+     * both, so the frame's scale governs. A source built with a domain maps
+     * differently here than on `<Hand value>`. @default the frame's `min`
      */
     from?: DomainValue | Source<number>
     /**
      * Where the arc ends — `<Arc to={speed} />` is a gauge fill. A `Source`
      * here carries the same repaint-bound cost as on `from`: prefer
-     * tick-cadence sources. @default the frame's `max`
+     * tick-cadence sources. As on `from`, the source's `domain` is **not**
+     * consulted — unlike `<Hand>`, the frame's scale governs both endpoints.
+     * @default the frame's `max`
      */
     to?: DomainValue | Source<number>
     /**
