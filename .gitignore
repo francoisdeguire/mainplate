@@ -32,3 +32,4 @@ bun.lockb.bak
 # Bare patterns so they match at any depth.
 AGENTS.md
 CLAUDE.md
+.planning/
