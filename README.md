@@ -77,57 +77,99 @@ the string forms `"circle"` and `"rect"` work anywhere; `circleOutline()` and
 - **`<Place>`** — the escape hatch: arbitrary SVG children positioned at an
   angle, a clock position (`at="9h"`), or a point.
 
-A complete face, trimmed from the working chronograph at
-`www/app/lab/face/page.tsx` (run it with `bun run dev`, then `/lab/face`):
+A complete face, from the working chronograph at `www/app/lab/face/page.tsx`
+(run it with `bun run dev`, then `/lab/face`). Trimmed by whole elements only —
+the full face adds a second register at 3 o'clock, a redline band, a 6 o'clock
+legend, and the centre caps; every element below is otherwise identical to the
+lab code:
 
 ```tsx
 "use client"
 
+import { useEffect } from "react"
 import { Arc, createSource, Dial, Hand, Mainplate, Numerals, Place, Subdial, Ticks } from "@/mainplate/core"
 
 const elapsed = createSource(0, { min: 0, max: 60 })
 
+const PLATE = "oklch(0.21 0.006 285)"
+const EDGE = "oklch(0.34 0.008 285)"
+const FAINT = "oklch(0.48 0.01 285)"
+const MID = "oklch(0.72 0.01 285)"
+const INK = "oklch(0.92 0.01 95)"
+const ACCENT = "oklch(0.8 0.13 78)"
+const WELL = "oklch(0.13 0.005 285)"
+
 export function Chronograph() {
+  // No animation layer yet — a bare interval writes the source; the chrono
+  // hand and the elapsed arc subscribe. Zero React renders per update.
+  useEffect(() => {
+    const id = setInterval(() => {
+      elapsed.set((Math.round((elapsed.get() + 0.2) * 10) / 10) % 60)
+    }, 200)
+    return () => clearInterval(id)
+  }, [])
+
   return (
-    <Mainplate size={360} max={60} label="Chronograph">
-      <Dial fill="oklch(0.21 0.006 285)" />
+    <Mainplate size={360} max={60} label="Chronograph, every primitive on one face">
+      <Dial fill={PLATE} />
 
       <Ticks
         inset={4}
         align="inside"
         tiers={[
-          { every: 1, length: 4, width: 0.8 },
-          { every: 5, length: 10, width: 2.2 },
+          { every: 1, length: 4, width: 0.8, fill: FAINT },
+          { every: 5, length: 10, width: 2.2, fill: INK },
         ]}
       />
 
-      {/* Each label's ink holds exactly 3 dial units from the tick track. */}
-      <Numerals tiers={[{ every: 5 }]} from={5} to={60} track={{ r: 86, width: 2.2 }} clearance={3} fontSize={10} />
+      {/* Solved: each label's ink holds exactly 3 dial units from the tick
+          track. skip={[15, 45]}: the registers sit where those labels would
+          land, and a subdial paints over anything drawn before it. */}
+      <Numerals
+        tiers={[{ every: 5 }]}
+        from={5}
+        to={60}
+        skip={[15, 45]}
+        track={{ r: 86, width: 2.2 }}
+        clearance={3}
+        fontSize={10}
+        fill={MID}
+      />
 
-      {/* A static track, and a live fill whose end tracks the source. */}
-      <Arc inset={1.5} strokeWidth={1.2} stroke="oklch(0.34 0.008 285)" />
-      <Arc from={0} to={elapsed} inset={1.5} strokeWidth={1.2} stroke="oklch(0.8 0.13 78)" />
+      {/* The elapsed ring: a static track, and a live fill whose `to` is the source. */}
+      <Arc inset={1.5} strokeWidth={1.2} stroke={EDGE} />
+      <Arc from={0} to={elapsed} inset={1.5} strokeWidth={1.2} stroke={ACCENT} />
 
       <Subdial at="9h" inset={50} r={26} min={0} max={60} label="Running seconds">
-        <Dial fill="oklch(0.13 0.005 285)" />
-        <Ticks count={12} inset={5} length={9} width={2} align="inside" />
-        <Hand value={42} length={80} tail={16} width={5} />
+        <Dial fill={WELL} />
+        <Ticks count={12} inset={5} length={9} width={2} align="inside" fill={FAINT} />
+        <Hand value={42} length={80} tail={16} width={5} fill={INK} />
       </Subdial>
 
-      <Place at="12h" inset={38}>
-        <text fontSize={8.5} textAnchor="middle" dominantBaseline="central">
+      <Place at="12h" inset={38} fill={INK}>
+        <text fontSize={8.5} letterSpacing={1} textAnchor="middle" dominantBaseline="central">
           mainplate
         </text>
       </Place>
 
-      {/* The hour hand overrides the 0–60 frame locally; the chrono hand is live. */}
-      <Hand value={10.85} max={12} length={50} tail={10} width={7} />
-      <Hand value={51} length={76} tail={12} width={5} />
-      <Hand value={elapsed} length={92} tail={22} width={1.8} fill="oklch(0.8 0.13 78)" />
+      {/* Hour and minute read 10:51 — the hour hand's local max={12} override
+          maps 10.85 onto the same 0–60 frame the minute reads. */}
+      <Hand value={10.85} max={12} length={50} tail={10} width={7} fill={INK} />
+      <Hand value={51} length={76} tail={12} width={5} fill={INK} />
+      <Hand value={elapsed} length={92} tail={22} width={1.8} fill={ACCENT} />
     </Mainplate>
   )
 }
 ```
+
+One rule the example leans on: **paint order is document order, and a subdial's
+well is opaque** — a `<Subdial>` paints over anything rendered before it, and
+nothing warns, because the library has no layout engine. Chapter-ring numerals
+that land under a register would render half-hidden, which is why the
+`skip={[15, 45]}` above omits the two labels where this face's registers sit
+(45 under the running-seconds register kept here, 15 under the totaliser the
+full lab face adds at 3 o'clock). `skip` takes domain values or a predicate;
+reach for it whenever a face's own furniture collides.
 
 ## Theming, Tailwind, and dial units
 
