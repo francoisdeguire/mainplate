@@ -13,6 +13,7 @@ const ROUTES = [
   { href: "/lab/gallery", label: "gallery" },
   { href: "/lab/live", label: "live" },
   { href: "/lab/layers", label: "layers" },
+  { href: "/lab/face", label: "face" },
 ] as const
 
 export function LabNav({ current }: { current: string }) {
