@@ -31,7 +31,15 @@ export type Frame = Scale & {
 /** Any primitive may override part of the frame's scale locally. */
 export type ScaleOverride = Partial<Scale>
 
-const FrameContext = createContext<Frame | null>(null)
+/**
+ * The context `<Mainplate>` provides and `useFrame` reads.
+ *
+ * Exported for exactly one consumer: `<Subdial>`, whose whole job is to provide
+ * this context again at a scaled origin so every primitive inside it works
+ * unchanged. It is deliberately not re-exported from the barrel — `useFrame` is
+ * the public way to read it, and `<Mainplate>`/`<Subdial>` the ways to set it.
+ */
+export const FrameContext = createContext<Frame | null>(null)
 
 /**
  * Props for {@link Mainplate}: the frame's scale, its outline, and any SVG prop.

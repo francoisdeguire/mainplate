@@ -30,6 +30,8 @@ export type { PlaceProps } from "./place"
 export { Place } from "./place"
 export type { Source, WritableSource } from "./source"
 export { createSource, isSource } from "./source"
+export type { SubdialProps } from "./subdial"
+export { Subdial } from "./subdial"
 export type {
   EvaluableProps,
   ItemOf,
