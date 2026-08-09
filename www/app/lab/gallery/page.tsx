@@ -8,7 +8,17 @@
  * `Outline`. Nothing here is interactive.
  */
 import type { ReactNode } from "react"
-import { type DialUnits, Mainplate, type Point, quantize, Ticks } from "@/mainplate/core"
+import {
+  clearanceRadius,
+  type DialUnits,
+  estimateInk,
+  Mainplate,
+  type Point,
+  polar,
+  quantize,
+  type TickFace,
+  Ticks,
+} from "@/mainplate/core"
 import { LabNav, ScratchNotice } from "../nav"
 
 const PLATE = "oklch(0.21 0.006 285)"
@@ -19,46 +29,47 @@ const INK = "oklch(0.92 0.01 95)"
 const ACCENT = "oklch(0.8 0.13 78)"
 const WELL = "oklch(0.13 0.005 285)"
 
-/* --- numeral clearance prototype ---------------------------------------
- * The candidate mechanism for §5.9's `align` on <Numerals>, tried by hand.
+/* --- numeral clearance ---------------------------------------------------
+ * The real mechanism now lives in core: `clearanceRadius` holds the shortest
+ * ink-to-tick distance constant. The superseded ray/box prototype below is
+ * kept, with its original constants, so the second gauge can show what it
+ * got wrong.
  */
 
-/**
- * Per-character advance estimate, in em. Digit strings in UI fonts cluster
- * hard around 0.52–0.58em per character (measured in the system font:
- * "220" is 0.547em/char of ink, "100" is 0.521); the table carries the few
- * shapes that break the average. `tabular-nums` would make digits exact.
- */
-const CHAR_EM: Record<string, number> = { "1": 0.45, I: 0.25, W: 0.9, M: 0.9 }
-const CAP_EM = 0.72 // cap-height ink; digits and caps have no descenders
-
-const emWidth = (label: string) => [...label].reduce((w, ch) => w + (CHAR_EM[ch] ?? 0.6), 0)
-
-/**
- * Centre for an upright label whose text-box edge should sit on the anchor,
- * measured along the ray from the dial centre. The pull-in amount is the
- * distance from the box centre to its own boundary in the ray's direction —
- * `min(hw/|ux|, hh/|uy|)`, the same ray/rect intersection `rectOutline`'s
- * `trace()` runs, pointed at the glyph box instead of the dial. `scalar`
- * swaps in §5.9's current direction-blind half-height shift, for comparison.
- */
-function clearedCentre(
-  point: Point,
-  r: DialUnits,
+/** Centre a label so its optical ink clears the tick's inner end by `clearance`. */
+function opticalCentre(
+  angle: number,
+  rotation: number,
   label: string,
   fontSize: number,
-  scalar = false,
+  tick: TickFace,
+  clearance: DialUnits,
 ): Point {
-  const hw = (emWidth(label) * fontSize) / 2
-  const hh = (CAP_EM * fontSize) / 2
+  const r = clearanceRadius({ ink: estimateInk(label, fontSize), angle, rotation, tick, clearance })
+  const p = polar(angle, r)
+  return { x: quantize(p.x), y: quantize(p.y) }
+}
+
+/**
+ * The superseded prototype: pull the centre in from the anchor by the ray/box
+ * intersection `min(hw/|ux|, hh/|uy|)`, holding the gap *measured along the
+ * ray* constant. Wrong, instructively: a rectangle's corners protrude toward
+ * the tick without lying on the ray, so wide labels crowd their ticks at the
+ * diagonals. Kept verbatim — original metrics included — for the comparison.
+ */
+const OLD_CHAR_EM: Record<string, number> = { "1": 0.45, I: 0.25, W: 0.9, M: 0.9 }
+const OLD_CAP_EM = 0.72
+
+function rayBoxCentre(point: Point, r: DialUnits, label: string, fontSize: number): Point {
+  const em = [...label].reduce((w, ch) => w + (OLD_CHAR_EM[ch] ?? 0.6), 0)
+  const hw = (em * fontSize) / 2
+  const hh = (OLD_CAP_EM * fontSize) / 2
   const ux = Math.abs(point.x) / r
   const uy = Math.abs(point.y) / r
-  const extent = scalar
-    ? hh
-    : Math.min(
-        ux > 1e-9 ? hw / ux : Number.POSITIVE_INFINITY,
-        uy > 1e-9 ? hh / uy : Number.POSITIVE_INFINITY,
-      )
+  const extent = Math.min(
+    ux > 1e-9 ? hw / ux : Number.POSITIVE_INFINITY,
+    uy > 1e-9 ? hh / uy : Number.POSITIVE_INFINITY,
+  )
   const f = (r - extent) / r
   return { x: quantize(point.x * f), y: quantize(point.y * f) }
 }
@@ -89,8 +100,8 @@ export default function Gallery() {
 
       <div className="mt-8 grid gap-10 sm:grid-cols-2 xl:grid-cols-3">
         <Figure
-          title="Gauge, direction-aware clearance"
-          caption="Numerals anchored at r 75, meaning: the text box's outer edge sits at 75, whatever the label. Each centre is pulled inward by the ray/box distance min(hw/|ux|, hh/|uy|) from an em estimate, so the gap to the tick ends (r 78) reads constant all the way round — compare 100 at the top with 180 at the side."
+          title="Gauge, optical clearance"
+          caption="Every numeral's ink holds the same shortest distance — 3 dial units — from its tick's inner end (r 78, width 2.2), solved by core's clearanceRadius from an estimated optical box: flat cap band, measured advances, corner recession on round glyphs. The 0 and the 220 land on different radii precisely so their gaps read equal."
         >
           <Mainplate
             size={280}
@@ -110,10 +121,17 @@ export default function Gallery() {
               ]}
             />
             <Ticks
-              r={75}
+              orient="upright"
               tiers={[{ every: 20 }]}
               renderItem={(mark) => {
-                const p = clearedCentre(mark.point, 75, String(mark.value), 11)
+                const p = opticalCentre(
+                  mark.angle,
+                  mark.rotation,
+                  String(mark.value),
+                  11,
+                  { r: 78, width: 2.2 },
+                  3,
+                )
                 return (
                   <text
                     x={p.x}
@@ -133,8 +151,8 @@ export default function Gallery() {
         </Figure>
 
         <Figure
-          title="Same gauge, scalar shift"
-          caption="The same anchor with §5.9's current mechanism: a direction-blind shift inward by half the cap height. Right at 12 o'clock, where the radial direction is the text's block axis — but at 3 and 9 the radial extent of '180' is its half-width, ~9 units rather than ~4, so the side numerals crowd into the ticks. The direction-aware pull-in above is the fix."
+          title="Same gauge, ray/box prototype"
+          caption="What shipped before: each centre pulled in by the ray/box intersection, holding the gap measured along the ray at 3. A text box is a rectangle, and at the diagonals its corners protrude toward the tick without lying on the ray — the 220's true shortest distance collapses to ~1.4 units while the near-square 0 keeps ~3.3, so the 0 reads further out than the 220. The on-ray gap was constant; the gap the eye measures was not."
         >
           <Mainplate
             size={280}
@@ -142,7 +160,7 @@ export default function Gallery() {
             max={220}
             startAngle={-135}
             sweepAngle={270}
-            label="Speed gauge with scalar numeral shift"
+            label="Speed gauge with the superseded ray/box numeral shift"
           >
             <circle r={100} fill={PLATE} stroke={EDGE} strokeWidth={0.8} />
             <Ticks
@@ -157,7 +175,7 @@ export default function Gallery() {
               r={75}
               tiers={[{ every: 20 }]}
               renderItem={(mark) => {
-                const p = clearedCentre(mark.point, 75, String(mark.value), 11, true)
+                const p = rayBoxCentre(mark.point, 75, String(mark.value), 11)
                 return (
                   <text
                     x={p.x}
@@ -261,7 +279,7 @@ export default function Gallery() {
 
         <Figure
           title="Compass rose"
-          caption='Degree marks as merged quads; the cardinals are a second <Ticks> using an explicit ticks array whose items carry a label, placed by renderItem with the same direction-aware clearance as the gauge — anchor r 79, cardinal tick ends at r 83. mark.rotation carries what orient resolves to — 0 here, because orient="upright" — for the consumer to apply.'
+          caption='Degree marks as merged quads; the cardinals are a second <Ticks> using an explicit ticks array whose items carry a label, placed by renderItem with the same optical clearance as the gauge — 4 units of ink-to-tick distance from the cardinal tick ends at r 83. mark.rotation carries what orient resolves to — 0 here, because orient="upright" — for the consumer to apply.'
         >
           <Mainplate size={280} max={360} label="Compass rose">
             <circle r={100} fill={PLATE} stroke={EDGE} strokeWidth={0.8} />
@@ -274,7 +292,6 @@ export default function Gallery() {
               ]}
             />
             <Ticks
-              r={79}
               orient="upright"
               ticks={[
                 { value: 0, label: "N" },
@@ -284,7 +301,14 @@ export default function Gallery() {
               ]}
               renderItem={(mark) => {
                 const label = String(mark.props.label)
-                const p = clearedCentre(mark.point, 79, label, 17)
+                const p = opticalCentre(
+                  mark.angle,
+                  mark.rotation,
+                  label,
+                  17,
+                  { r: 83, width: 2 },
+                  4,
+                )
                 return (
                   <text
                     x={p.x}
