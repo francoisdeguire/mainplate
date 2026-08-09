@@ -249,7 +249,10 @@ file in `fixtures/README.md` in case a future example genuinely needs it.
 - `value` is always a domain value; `at` is always a position. A mark's value
   is never falsified for aesthetics — nudge its `at` instead.
 - `r` is frame-anchored (a circle, whatever the outline); `inset` is
-  outline-anchored (follows the shape). Every primitive takes exactly one.
+  outline-anchored (follows the shape). Every primitive that anchors this way
+  takes exactly one — the two exceptions are `<Subdial>`, whose `r` is its
+  *size* in parent units (its anchor is `at` + `inset`, as in the example
+  above), and `<Hand>`, which pivots at the centre and takes neither.
 
 ## Name
 
