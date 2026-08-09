@@ -28,6 +28,8 @@ export {
 } from "./geometry"
 export type { HandProps } from "./hand"
 export { Hand } from "./hand"
+export type { DialPercent, FrameBoxOptions } from "./layer"
+export { dialPercent, frameBox } from "./layer"
 export type { NumeralGeometry, NumeralsProps } from "./numerals"
 export { Numerals } from "./numerals"
 export type { Outline, OutlineSpec, Rect } from "./outline"

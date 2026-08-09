@@ -2,7 +2,7 @@
 
 /**
  * The frame: the angular coordinate system, and the root that establishes it.
- * May import: geometry, outline. Must not import: time/.
+ * May import: geometry, layer, outline. Must not import: time/.
  */
 import { createContext, type ReactNode, type SVGProps, use, useId, useMemo } from "react"
 import {
@@ -15,6 +15,7 @@ import {
   type Scale,
   valueToAngle,
 } from "./geometry"
+import { frameBox, framePadding } from "./layer"
 import { type Outline, type OutlineSpec, resolveOutline } from "./outline"
 
 /**
@@ -167,10 +168,11 @@ export function Mainplate({
   ...rest
 }: MainplateProps) {
   // The one default that cannot be a default parameter: it depends on another
-  // prop. Clipping makes the space outside the outline undrawable, so a clipped
-  // face reserves none of it and the viewBox hugs the outline; an unclipped one
-  // keeps the 10 units that numerals and an overhanging hand need.
-  const padding = explicitPadding ?? (clip ? 0 : 10)
+  // prop. It lives in `layer` alongside the box derivation that consumes it, so
+  // that an HTML layer positioning itself against this face resolves the very
+  // same number — see `framePadding`'s own note for why the number is what it
+  // is. Read back here only for the warning below.
+  const padding = framePadding(explicitPadding, clip)
 
   const resolvedOutline = useMemo(() => resolveOutline(outline), [outline])
 
@@ -199,15 +201,13 @@ export function Mainplate({
     [min, max, startAngle, sweepAngle, resolvedOutline],
   )
 
-  const box = resolvedOutline.bbox()
-  const viewBox = [
-    box.x - padding,
-    box.y - padding,
-    box.width + padding * 2,
-    box.height + padding * 2,
-  ].join(" ")
+  // Shared with `dialPercent`, not recomputed: the two would drift the first
+  // time either the bbox or the padding default changed, and a layer half a
+  // padding out of register is the kind of bug nobody attributes to a default.
+  const box = frameBox({ outline: resolvedOutline, padding: explicitPadding, clip })
+  const viewBox = [box.x, box.y, box.width, box.height].join(" ")
 
-  const aspect = (box.height + padding * 2) / (box.width + padding * 2)
+  const aspect = box.height / box.width
   const sized =
     size === undefined
       ? { style: { width: "100%", height: "auto", ...style } }
