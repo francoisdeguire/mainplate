@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-import { render } from "@testing-library/react"
-import type { ReactElement } from "react"
+import { act, render } from "@testing-library/react"
+import { Profiler, type ReactElement } from "react"
+import { renderToStaticMarkup } from "react-dom/server"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { Arc } from "./arc"
 import { Dial } from "./dial"
@@ -9,6 +10,7 @@ import { Hand } from "./hand"
 import { Numerals } from "./numerals"
 import { circleOutline, rectOutline } from "./outline"
 import { Place } from "./place"
+import { createSource, type Source } from "./source"
 import { Subdial } from "./subdial"
 import { Ticks } from "./ticks"
 
@@ -294,5 +296,187 @@ describe("data-mp is the library's, not the caller's", () => {
     for (const name of names) {
       expect(container.querySelector(`[data-mp="${name}"]`)).not.toBeNull()
     }
+  })
+})
+
+/**
+ * The shape §14.2's formatter takes: module scope, stable identity. An inline
+ * closure would be a fresh effect dependency per render and churn the live
+ * subscription — the same reason `<Hand>` detaches `subscribe` and `get`.
+ */
+const kmh = (v: number) => `${Math.round(v)} km/h`
+
+/**
+ * Mimics the `time/` label helper of §14.1: an hours-with-fraction reading
+ * formatted as a clock. Core never learns what the number means — the caller
+ * carries the meaning in, as a function.
+ */
+const asClock = (v: number) => {
+  const h = Math.floor(v)
+  const m = Math.floor((v - h) * 60)
+  return `${h}:${String(m).padStart(2, "0")}`
+}
+
+describe("<Mainplate> — the meter role (§14.2)", () => {
+  const svgOf = (container: HTMLElement) => {
+    const svg = container.querySelector("svg")
+    if (svg === null) throw new Error("no <svg> rendered")
+    return svg
+  }
+
+  it("opts into role=meter and carries all four ARIA values", () => {
+    const { container } = render(
+      <Mainplate min={0} max={220} value={88} valueText={kmh} label="Speed" />,
+    )
+    const svg = svgOf(container)
+    expect(svg.getAttribute("role")).toBe("meter")
+    expect(svg.getAttribute("aria-valuemin")).toBe("0")
+    expect(svg.getAttribute("aria-valuemax")).toBe("220")
+    expect(svg.getAttribute("aria-valuenow")).toBe("88")
+    expect(svg.getAttribute("aria-valuetext")).toBe("88 km/h")
+    // A meter still needs an accessible name; the label survives the role.
+    expect(svg.getAttribute("aria-label")).toBe("Speed")
+  })
+
+  it("stays one image without a value: role img, no meter attributes", () => {
+    const svg = svgOf(render(<Mainplate />).container)
+    expect(svg.getAttribute("role")).toBe("img")
+    for (const attr of ["aria-valuenow", "aria-valuemin", "aria-valuemax", "aria-valuetext"]) {
+      expect(svg.getAttribute(attr)).toBeNull()
+    }
+  })
+
+  it("omits aria-valuetext when the caller supplies no formatter", () => {
+    const svg = svgOf(render(<Mainplate min={0} max={220} value={88} />).container)
+    expect(svg.getAttribute("aria-valuenow")).toBe("88")
+    // Redundant valuetext is worse than none: it would freeze a screen
+    // reader's phrasing to whatever the number happened to say.
+    expect(svg.getAttribute("aria-valuetext")).toBeNull()
+  })
+
+  it("takes its bounds from source.domain when the source declares one", () => {
+    // An hour24 clock source spans 0–24 while a watch frame spans 0–60: the
+    // meter must report the value's own span, not the dial's printed one.
+    const s = createSource(10.16, { min: 0, max: 24 })
+    const svg = svgOf(render(<Mainplate min={0} max={60} value={s} />).container)
+    expect(svg.getAttribute("aria-valuemin")).toBe("0")
+    expect(svg.getAttribute("aria-valuemax")).toBe("24")
+    // Rounded to the meter grid for a 24-unit span: a tenth of an hour.
+    expect(svg.getAttribute("aria-valuenow")).toBe("10.2")
+  })
+
+  it("falls back to the frame's min/max when the source declares no domain", () => {
+    const s = createSource(88)
+    const svg = svgOf(render(<Mainplate min={0} max={220} value={s} />).container)
+    expect(svg.getAttribute("aria-valuemin")).toBe("0")
+    expect(svg.getAttribute("aria-valuemax")).toBe("220")
+    expect(svg.getAttribute("aria-valuenow")).toBe("88")
+  })
+
+  it("keeps aria-valuenow live through set, at zero React renders", () => {
+    // §14.2's whole point: an accessible value frozen at first render is a
+    // screen reader confidently reporting a stale number. The sequence must
+    // become *correct* after each set — and the Profiler must see exactly the
+    // mount, since the writes ride the ref path, not a render.
+    const s = createSource(88, { min: 0, max: 220 })
+    const commits: string[] = []
+    const { container } = render(
+      <Profiler id="face" onRender={(_, phase) => commits.push(phase)}>
+        <Mainplate value={s} valueText={kmh} label="Speed" />
+      </Profiler>,
+    )
+    const svg = svgOf(container)
+    expect(svg.getAttribute("aria-valuenow")).toBe("88")
+    expect(svg.getAttribute("aria-valuetext")).toBe("88 km/h")
+    expect(commits).toEqual(["mount"])
+
+    act(() => s.set(120))
+    expect(svg.getAttribute("aria-valuenow")).toBe("120")
+    expect(svg.getAttribute("aria-valuetext")).toBe("120 km/h")
+
+    act(() => s.set(140))
+    expect(svg.getAttribute("aria-valuenow")).toBe("140")
+    expect(svg.getAttribute("aria-valuetext")).toBe("140 km/h")
+    expect(commits).toEqual(["mount"])
+  })
+
+  it("writes only when the reported text changes — tick cadence from a glide feed", () => {
+    // core/ cannot ask a source its cadence (§16), so tick cadence is
+    // structural: aria-valuenow is reported on a grid of about a hundred
+    // graduations, and a notification that does not move the text writes
+    // nothing. A glide source notifying sixty times a second therefore
+    // mutates the accessibility tree about once per grid step.
+    const s = createSource(10, { min: 0, max: 60 })
+    const { container } = render(<Mainplate value={s} />)
+    const svg = svgOf(container)
+    const spy = vi.spyOn(svg, "setAttribute")
+
+    // Sub-step movement — what a glide frame delivers: same graduation.
+    act(() => s.set(10.2))
+    act(() => s.set(10.4))
+    expect(spy.mock.calls.filter(([name]) => name === "aria-valuenow")).toEqual([])
+
+    // Crossing a graduation writes exactly once, and writes the right text.
+    act(() => s.set(11.02))
+    expect(spy.mock.calls.filter(([name]) => name === "aria-valuenow")).toEqual([
+      ["aria-valuenow", "11"],
+    ])
+  })
+
+  it("formats aria-valuetext through the caller's helper, live on the ref path", () => {
+    // §14.1: a clock's reading is the caller's to phrase — core cannot know
+    // 10.16 hours means "10:09". The helper gets the raw value, so its own
+    // precision decides how often the text actually changes.
+    const s = createSource(10.16, { min: 0, max: 24 })
+    const svg = svgOf(render(<Mainplate value={s} valueText={asClock} label="Clock" />).container)
+    expect(svg.getAttribute("aria-valuetext")).toBe("10:09")
+    act(() => s.set(10.5))
+    expect(svg.getAttribute("aria-valuetext")).toBe("10:30")
+  })
+
+  it("never announces: no aria-live anywhere, before or after a set (§14.1)", () => {
+    // Fresh-when-queried, never spoken unprompted: a clock announcing every
+    // minute is spam. One mutation adds aria-live="polite"; this catches it.
+    const s = createSource(30, { min: 0, max: 60 })
+    const { container } = render(
+      <Mainplate value={s} valueText={kmh}>
+        <Hand value={s} />
+      </Mainplate>,
+    )
+    expect(container.querySelectorAll("[aria-live]")).toHaveLength(0)
+    act(() => s.set(45))
+    expect(container.querySelectorAll("[aria-live]")).toHaveLength(0)
+  })
+
+  it("serialises the meter's current value on the server, ready to hydrate", () => {
+    // No effect runs on the server: the render path alone must carry the
+    // accessible value, exactly as it carries a hand's rotation.
+    const s = createSource(88, { min: 0, max: 220 })
+    const html = renderToStaticMarkup(<Mainplate value={s} valueText={kmh} />)
+    expect(html).toContain('role="meter"')
+    expect(html).toContain('aria-valuenow="88"')
+    expect(html).toContain('aria-valuetext="88 km/h"')
+  })
+
+  it("subscribes once on mount and runs the teardown on unmount", () => {
+    // Observed as the teardown running, not as "set after unmount does not
+    // throw" — the vacuous form passes whether or not the cleanup exists.
+    const s = createSource(88, { min: 0, max: 220 })
+    const calls = { subscribes: 0, teardowns: 0 }
+    const spied: Source<number> = {
+      ...s,
+      subscribe: (cb: () => void) => {
+        calls.subscribes += 1
+        const off = s.subscribe(cb)
+        return () => {
+          calls.teardowns += 1
+          off()
+        }
+      },
+    }
+    const { unmount } = render(<Mainplate value={spied} />)
+    expect(calls).toEqual({ subscribes: 1, teardowns: 0 })
+    unmount()
+    expect(calls).toEqual({ subscribes: 1, teardowns: 1 })
   })
 })
