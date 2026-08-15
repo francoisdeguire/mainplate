@@ -244,6 +244,11 @@ export function Hand({
 
   const root = {
     fill,
+    // Hidden from the accessibility tree (§14.1): the face is one image, and
+    // the value this picture draws is reported by the root's meter — sixty
+    // exposed paths is the failure mode. Before the spread, so a caller who
+    // really wants the node surfaced can override it.
+    "aria-hidden": true,
     ...rest,
     // After the spread, not before: the type already refuses a caller's
     // `transform`, and this is the second lock, for the untyped spread that
@@ -263,6 +268,13 @@ export function Hand({
       <g
         ref={rotationRef}
         style={{ rotate: `${rotation}deg`, transformBox: "view-box", transformOrigin: "0 0" }}
+        // §9.5: with a live source, `source.get()` runs on every render —
+        // including hydration — and real time moves between the server's
+        // render and the client's first one, so this style legitimately
+        // differs and the effect above immediately overwrites it anyway.
+        // Scoped to this node alone: a mismatch anywhere else is a defect
+        // and must keep warning.
+        suppressHydrationWarning
       >
         {/* Stage 3, static: the artwork's own space. Read right to left —
             the pivot is subtracted in the units the artwork was drawn in,

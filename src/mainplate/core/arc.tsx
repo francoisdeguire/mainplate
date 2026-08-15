@@ -368,6 +368,10 @@ export function Arc({
     <path
       stroke={stroke}
       strokeWidth={strokeWidth}
+      // Hidden from the accessibility tree (§14.1): a redline or gauge fill
+      // is decoration to a screen reader — the value it traces is reported
+      // by the root's meter. Before the spread, so a caller can override.
+      aria-hidden
       {...rest}
       // After the spread: the types already refuse a caller's `d` and `fill`,
       // and this is the second lock, for the untyped spread that gets past

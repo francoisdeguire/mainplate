@@ -11,6 +11,11 @@ import type { DomainValue } from "./geometry"
  * through a ref, so the value can change every frame without React rendering.
  * Nothing here knows about clocks: a websocket, a sensor feed, or a Motion
  * value satisfies this shape in about five lines.
+ *
+ * `get` and `subscribe` must work detached from their `Source` — consumers
+ * pull them off into effect dependencies and call them bare — and each must
+ * stay identity-stable across calls, since a fresh function per read would
+ * churn those same dependencies for nothing.
  */
 export type Source<T> = {
   /** Read the value as of now. */

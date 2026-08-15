@@ -4,7 +4,17 @@
  * The frame: the angular coordinate system, and the root that establishes it.
  * May import: geometry, layer, outline. Must not import: time/.
  */
-import { createContext, type ReactNode, type SVGProps, use, useId, useMemo } from "react"
+import {
+  createContext,
+  type ReactNode,
+  type SVGProps,
+  use,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+} from "react"
 import {
   angleToValue,
   type Degrees,
@@ -12,11 +22,13 @@ import {
   type DialUnits,
   type DomainValue,
   polar,
+  quantize,
   type Scale,
   valueToAngle,
 } from "./geometry"
 import { frameBox, framePadding } from "./layer"
 import { type Outline, type OutlineSpec, resolveOutline } from "./outline"
+import { isSource, type Source } from "./source"
 
 /**
  * The angular coordinate system a face establishes, plus its centre, nominal
@@ -111,6 +123,33 @@ export type MainplateProps = Omit<SVGProps<SVGSVGElement>, "clip" | "viewBox"> &
   sweepAngle?: Degrees
   /** Accessible name. @default "Instrument face" */
   label?: string
+  /**
+   * Opt the face into `role="meter"` — the accessible value of a gauge
+   * (§14.2). Without it the root stays one `role="img"`.
+   *
+   * A number is the controlled form. A `Source` keeps the accessible value
+   * live the same way `<Hand>` keeps its rotation live: the root subscribes
+   * and writes `aria-valuenow` / `aria-valuetext` through a ref, at zero
+   * React renders — an accessible value frozen at first render is a screen
+   * reader confidently announcing a stale number, worse than no value at
+   * all. Bounds come from the source's `domain` when it declares one, else
+   * from the frame's `min`/`max`. Typically the same source a `<Hand>` or
+   * `<Arc>` inside the face draws.
+   */
+  value?: DomainValue | Source<number>
+  /**
+   * Formats `aria-valuetext` from the current value — `"88 km/h"`, `"10:09"`.
+   *
+   * This is where a clock's label helper plugs in: core cannot know what the
+   * number means (§14.1, §16), so the reading's phrasing is the caller's, as
+   * a function. Function-shaped props put the call site behind
+   * `"use client"` — already true for any face driven by a `Source`. Pass a
+   * stable function (a module-scope helper, not an inline closure): its
+   * identity is a dependency of the live subscription, and a fresh closure
+   * per render would churn it. Omitted, the meter speaks `aria-valuenow`
+   * alone — a valuetext restating the number would only freeze its phrasing.
+   */
+  valueText?: (value: DomainValue) => string
   children?: ReactNode
 }
 
@@ -150,6 +189,28 @@ function warnClipHidesPadding(padding: DialUnits) {
 }
 
 /**
+ * The grid `aria-valuenow` is reported on: about a hundred graduations across
+ * the span, snapped to a power of ten so the reported numbers read as numbers.
+ *
+ * This is how §14.2's "tick cadence, not rAF" is met without core/ knowing any
+ * clock exists (§16): a glide source notifies ~60×/s, but a value rounded to
+ * this grid changes about once per graduation, and the live write below is
+ * skipped whenever the reported text is unchanged. Finer graduations would
+ * only churn the accessibility tree at animation cadence — no assistive
+ * technology resolves a meter beyond roughly one part in a hundred.
+ */
+function meterStep(min: DomainValue, max: DomainValue): number {
+  const span = Math.abs(max - min)
+  if (span === 0) return 1
+  return 10 ** Math.round(Math.log10(span / 100))
+}
+
+/** The value `aria-valuenow` reports: on the meter grid, quantised for the DOM. */
+function meterValue(value: DomainValue, step: number): number {
+  return quantize(Math.round(value / step) * step)
+}
+
+/**
  * The root of a face: an `<svg>` in dial units that establishes the frame every
  * primitive inside it reads from.
  */
@@ -163,8 +224,11 @@ export function Mainplate({
   startAngle = 0,
   sweepAngle = 360,
   label = "Instrument face",
+  value,
+  valueText,
   children,
   style,
+  ref,
   ...rest
 }: MainplateProps) {
   // The one default that cannot be a default parameter: it depends on another
@@ -201,6 +265,95 @@ export function Mainplate({
     [min, max, startAngle, sweepAngle, resolvedOutline],
   )
 
+  const rootRef = useRef<SVGSVGElement | null>(null)
+  // Two hands want the root node: the library, for the live ARIA writes
+  // below, and the caller — `<Mainplate ref={clock.observe}>` is the
+  // documented way to pause a clock offscreen. Merged rather than withheld
+  // (contrast `<Arc>`, which owns its path node outright), so both get it.
+  //
+  // Follows the pre-React-19 ref-callback contract: called with the node on
+  // attach and with `null` on detach, never anything in between. React 19
+  // lets a callback ref return its own cleanup function in place of that
+  // `null` call, but this one doesn't — a caller's ref is simply forwarded
+  // bare, so any cleanup it returns is ignored, not chained. Every known
+  // consumer (`clock.observe`, a plain `useRef`) already expects `null` on
+  // detach, so this costs nothing today.
+  const composedRef = useCallback(
+    (node: SVGSVGElement | null) => {
+      rootRef.current = node
+      if (typeof ref === "function") ref(node)
+      else if (ref != null) ref.current = node
+    },
+    [ref],
+  )
+
+  // The runtime discriminator for the meter's value union — same shape as
+  // `<Hand>`'s, and `null` when the face never opted in at all.
+  let source: Source<number> | null = null
+  let current: DomainValue | null = null
+  if (isSource(value)) {
+    source = value
+    current = source.get()
+  } else if (value !== undefined) {
+    current = value
+  }
+
+  // The meter reports the value's own span: a watch frame runs 0–60 while an
+  // hour24 source spans 0–24, and announcing "10.2 of 60" would be a lie. No
+  // explicit-prop tier here, unlike §8.10 on `<Hand>` — the frame's `min`/`max`
+  // are the dial's printed scale, which a domain-declaring source overrides.
+  const domain = source === null ? undefined : source.domain
+  const ariaMin = domain !== undefined ? domain.min : min
+  const ariaMax = domain !== undefined ? domain.max : max
+  const step = meterStep(ariaMin, ariaMax)
+
+  // Detached so the effect's dependencies are the stable closures themselves,
+  // exactly as on `<Hand>`: re-renders re-run nothing, swapping the source —
+  // or dropping to a plain number, which nulls both — resubscribes.
+  const subscribe = source === null ? null : source.subscribe
+  const get = source === null ? null : source.get
+
+  useEffect(() => {
+    if (subscribe === null || get === null) return
+    const write = () => {
+      // Null while unmounting: a notification arriving mid-teardown must not
+      // touch a detached node.
+      const node = rootRef.current
+      if (node === null) return
+      const v = get()
+      // §14.2's ref path: the accessible value rides the same mechanism as a
+      // hand's rotation, bypassing React entirely. Written only when the
+      // reported text changes — the structural form of "tick cadence": a
+      // glide source notifying every frame moves this string about once per
+      // meter graduation, and an unchanged attribute is never rewritten.
+      const now = String(meterValue(v, step))
+      if (node.getAttribute("aria-valuenow") !== now) node.setAttribute("aria-valuenow", now)
+      if (valueText !== undefined) {
+        // The formatter sees the raw value — its own precision (whole km/h,
+        // minutes on a clock) decides how often its text changes.
+        const text = valueText(v)
+        if (node.getAttribute("aria-valuetext") !== text) node.setAttribute("aria-valuetext", text)
+      }
+    }
+    // Written once on subscription, not only on change: a value that moved
+    // between this render and this effect would otherwise never be reported.
+    write()
+    return subscribe(write)
+  }, [subscribe, get, step, valueText])
+
+  // §14.1 forbids aria-live in any form: the value is fresh when queried,
+  // never announced — a clock speaking every minute is screen-reader spam.
+  const meter =
+    current === null
+      ? null
+      : ({
+          role: "meter",
+          "aria-valuemin": quantize(ariaMin),
+          "aria-valuemax": quantize(ariaMax),
+          "aria-valuenow": meterValue(current, step),
+          ...(valueText === undefined ? null : { "aria-valuetext": valueText(current) }),
+        } as const)
+
   // Shared with `dialPercent`, not recomputed: the two would drift the first
   // time either the bbox or the padding default changed, and a layer half a
   // padding out of register is the kind of bug nobody attributes to a default.
@@ -234,6 +387,7 @@ export function Mainplate({
       viewBox={viewBox}
       role="img"
       aria-label={label}
+      {...meter}
       xmlns="http://www.w3.org/2000/svg"
       {...sized}
       {...rest}
@@ -241,6 +395,7 @@ export function Mainplate({
       // `data-mp` past the props type, so the second lock keeps the one
       // attribute the library guarantees — still a compile-time static.
       data-mp="mainplate"
+      ref={composedRef}
     >
       <FrameContext value={frame}>{body}</FrameContext>
     </svg>

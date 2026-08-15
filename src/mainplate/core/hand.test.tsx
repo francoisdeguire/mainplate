@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { act, render } from "@testing-library/react"
-import { renderToStaticMarkup } from "react-dom/server"
-import { describe, expect, it } from "vitest"
+import { hydrateRoot, type Root } from "react-dom/client"
+import { renderToStaticMarkup, renderToString } from "react-dom/server"
+import { describe, expect, it, vi } from "vitest"
 import type { Frame } from "./frame"
 import { Mainplate, useFrame } from "./frame"
 import { Hand } from "./hand"
@@ -292,6 +293,98 @@ describe("<Hand> — the DOM contract", () => {
     expect(root?.getAttribute("data-wrapped")).toBe("yes")
     expect(root?.getAttribute("transform")).toBe("translate(0 0)")
     expect(rotation(container)).not.toBeNull()
+  })
+})
+
+describe("<Hand> — in the accessibility tree (§14.1)", () => {
+  it("is hidden: the face is one image, not a pile of paths", () => {
+    // The value a hand draws is reported by the root — the picture that
+    // draws it is decoration, and sixty exposed paths is the failure mode.
+    const { container } = render(
+      <Mainplate>
+        <Hand value={0} />
+      </Mainplate>,
+    )
+    expect(position(container)?.getAttribute("aria-hidden")).toBe("true")
+  })
+
+  it("lets a caller expose it again", () => {
+    const { container } = render(
+      <Mainplate>
+        <Hand value={0} aria-hidden={false} />
+      </Mainplate>,
+    )
+    expect(position(container)?.getAttribute("aria-hidden")).toBe("false")
+  })
+})
+
+describe("<Hand> — hydration across a live source (§9.5)", () => {
+  /** Server HTML in a host div, ready for hydrateRoot. */
+  function host(html: string) {
+    const div = document.createElement("div")
+    div.innerHTML = html
+    document.body.appendChild(div)
+    return div
+  }
+
+  it("suppresses the rotation mismatch a live source opens between server and client", async () => {
+    // The mechanism: the render path calls source.get() on every render,
+    // including hydration, and a live source legitimately moves between the
+    // server's render and the client's first one — real time does not hold
+    // still for hydration. That mismatch lands on exactly one node, the
+    // rotation group, and must be suppressed there rather than reported as a
+    // defect the consumer cannot fix.
+    const s = createSource(0, { min: 0, max: 60 })
+    const face = (
+      <Mainplate min={0} max={60}>
+        <Hand value={s} />
+      </Mainplate>
+    )
+    const div = host(renderToString(face))
+    s.set(15) // time moved on before the client's first render
+
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {})
+    let root: Root | undefined
+    try {
+      await act(async () => {
+        root = hydrateRoot(div, face)
+      })
+      expect(errors).not.toHaveBeenCalled()
+      // And the subscription then owns the node: the client value is drawn.
+      expect(div.querySelector('[data-mp="hand"] > g')?.getAttribute("style")).toBe(recipe(90))
+    } finally {
+      const r = root
+      if (r !== undefined) await act(async () => r.unmount())
+      errors.mockRestore()
+      div.remove()
+    }
+  })
+
+  it("suppresses nothing else: a mismatch off the rotation node still reports", async () => {
+    // The shield must sit on the rotation node alone. A divergence anywhere
+    // else — here, the position group's opacity — is a genuine defect and
+    // must keep warning; if suppression ever drifts to a parent, this fails.
+    const s = createSource(15, { min: 0, max: 60 })
+    const at = (opacity: number) => (
+      <Mainplate min={0} max={60}>
+        <Hand value={s} opacity={opacity} />
+      </Mainplate>
+    )
+    const div = host(renderToString(at(0.5)))
+
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {})
+    let root: Root | undefined
+    try {
+      await act(async () => {
+        root = hydrateRoot(div, at(0.6))
+      })
+      expect(errors).toHaveBeenCalled()
+    } finally {
+      const r = root
+      if (r !== undefined) await act(async () => r.unmount())
+      errors.mockRestore()
+      div.remove()
+    }
   })
 })
 

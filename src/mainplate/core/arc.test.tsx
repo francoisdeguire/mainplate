@@ -288,6 +288,24 @@ describe("<Arc> — the DOM contract", () => {
     expect(node?.getAttribute("class")).toBe("redline")
   })
 
+  it("is hidden from the accessibility tree, and a caller can expose it (§14.1)", () => {
+    // The face is one image: a redline or gauge fill is decoration to a
+    // screen reader — the value it traces is reported by the root's meter.
+    const { container: hidden } = render(
+      <Mainplate>
+        <Arc r={80} />
+      </Mainplate>,
+    )
+    expect(arc(hidden)?.getAttribute("aria-hidden")).toBe("true")
+
+    const { container: exposed } = render(
+      <Mainplate>
+        <Arc r={80} aria-hidden={false} />
+      </Mainplate>,
+    )
+    expect(arc(exposed)?.getAttribute("aria-hidden")).toBe("false")
+  })
+
   it("refuses a caller's fill at compile time, and keeps none at runtime", () => {
     const { container } = render(
       <Mainplate>
