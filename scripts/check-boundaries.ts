@@ -1,27 +1,53 @@
 /**
- * Module boundary check: nothing in core/ may import from time/.
+ * Module boundary checks. Two rules, one claim (§18: a dashboard gauge never
+ * pays for a clock): nothing in core/ may import from time/, and neither may
+ * the speedometer example — including theme.ts, which it imports, so the
+ * whole example's import graph stays core-only.
  * Run via `bun run check:boundaries`; wired into `check` and CI.
  */
 import { readdirSync, readFileSync, statSync } from "node:fs"
 import { join } from "node:path"
 
-const CORE = "src/mainplate/core"
-const offenders: string[] = []
+// Matches `from ".../time"` and `from ".../time/..."` — barrel and deep,
+// relative or via the `@/mainplate/*` alias — plus the forms without a
+// `from`: a bare side-effect `import ".../time"` and a dynamic
+// `import(".../time")`, both of which still load the module.
+const TIME_IMPORT = /(?:from|import)\s*\(?\s*["'][^"']*\/time(?:\/[^"']*)?["']/
 
-function walk(dir: string) {
+function walk(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
     const path = join(dir, entry)
-    if (statSync(path).isDirectory()) walk(path)
-    else if (/\.tsx?$/.test(entry) && /from\s+["'].*\/time\//.test(readFileSync(path, "utf8"))) {
-      offenders.push(path)
-    }
+    if (statSync(path).isDirectory()) walk(path, out)
+    else if (/\.tsx?$/.test(entry)) out.push(path)
+  }
+  return out
+}
+
+const rules: { message: string; ok: string; files: string[] }[] = [
+  {
+    message: "core/ must not import from time/",
+    ok: "boundary ok: core/ has no time/ imports",
+    files: walk("src/mainplate/core"),
+  },
+  {
+    message:
+      "the speedometer example must not import from time/ — §18: a gauge never pays for a clock",
+    ok: "boundary ok: the speedometer example has no time/ imports",
+    files: ["src/mainplate/examples/speedometer.tsx", "src/mainplate/examples/theme.ts"],
+  },
+]
+
+let failed = false
+for (const rule of rules) {
+  // A guarded file that stops existing is a rule silently guarding nothing,
+  // so a rename must fail the check as loudly as an offending import.
+  const offenders = rule.files.filter((path) => TIME_IMPORT.test(readFileSync(path, "utf8")))
+  if (offenders.length > 0) {
+    failed = true
+    console.error(`${rule.message}. Offenders:\n${offenders.join("\n")}`)
+  } else {
+    console.log(rule.ok)
   }
 }
 
-walk(CORE)
-
-if (offenders.length > 0) {
-  console.error(`core/ must not import from time/. Offenders:\n${offenders.join("\n")}`)
-  process.exit(1)
-}
-console.log("boundary ok: core/ has no time/ imports")
+if (failed) process.exit(1)
