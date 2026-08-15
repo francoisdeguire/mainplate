@@ -17,6 +17,7 @@ const ROUTES = [
   { href: "/lab/speedo", label: "speedo" },
   { href: "/lab/tank", label: "tank" },
   { href: "/lab/diver", label: "diver" },
+  { href: "/lab/chrono", label: "chrono" },
 ] as const
 
 export function LabNav({ current }: { current: string }) {
