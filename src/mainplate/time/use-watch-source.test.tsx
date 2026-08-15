@@ -66,6 +66,36 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+/**
+ * Hand-rolled `IntersectionObserver`, because this jsdom has none: records its
+ * lifecycle and fires only when told. Like the platform, a disconnected
+ * observer never calls back again.
+ */
+class FakeIntersectionObserver {
+  static instances: FakeIntersectionObserver[] = []
+  observed: Element[] = []
+  disconnected = false
+  private cb: (entries: { isIntersecting: boolean }[]) => void
+  constructor(cb: (entries: { isIntersecting: boolean }[]) => void) {
+    this.cb = cb
+    FakeIntersectionObserver.instances.push(this)
+  }
+  observe(el: Element) {
+    this.observed.push(el)
+  }
+  unobserve(el: Element) {
+    this.observed = this.observed.filter((e) => e !== el)
+  }
+  disconnect() {
+    this.disconnected = true
+    this.observed = []
+  }
+  trigger(isIntersecting: boolean) {
+    if (this.disconnected) return
+    this.cb([{ isIntersecting }])
+  }
+}
+
 /** Mount the hook bare, recording every render's return value. */
 function mountClock(options?: WatchSourceOptions) {
   const seen: WatchSources[] = []
@@ -282,6 +312,157 @@ describe("teardown", () => {
     expect(caf).toHaveBeenCalled()
     expect(rafQueue.size).toBe(0)
     expect(vi.getTimerCount()).toBe(0)
+  })
+})
+
+describe("offscreen pausing (§9.11)", () => {
+  beforeEach(() => {
+    FakeIntersectionObserver.instances = []
+    vi.stubGlobal("IntersectionObserver", FakeIntersectionObserver)
+  })
+
+  it("constructs no observer until the consumer attaches the ref", () => {
+    const { clock } = mountClock()
+    const off = clock.second.subscribe(vi.fn())
+    // Mounting and subscribing spin nothing up — the observer is attach-lazy.
+    expect(FakeIntersectionObserver.instances).toHaveLength(0)
+    clock.observe(document.createElement("div"))
+    expect(FakeIntersectionObserver.instances).toHaveLength(1)
+    off()
+  })
+
+  it("pauses the engine offscreen and resyncs on return rather than replaying", () => {
+    vi.setSystemTime(T_CAD) // 03:30:36.400
+    const { clock } = mountClock({ timezone: "UTC" })
+    clock.observe(document.createElement("div"))
+    const cb = vi.fn()
+    const off = clock.second.subscribe(cb)
+    expect(rafQueue.size).toBe(1)
+
+    const io = FakeIntersectionObserver.instances[0]
+    if (io === undefined) throw new Error("no observer was constructed")
+    io.trigger(false)
+    // Offscreen: the face released its engine — nothing scheduled anywhere.
+    expect(rafQueue.size).toBe(0)
+    expect(vi.getTimerCount()).toBe(0)
+
+    vi.advanceTimersByTime(5000) // five seconds pass offscreen
+    expect(cb).not.toHaveBeenCalled() // and none of them were delivered
+
+    io.trigger(true)
+    // Resync: one notification carrying elapsed real time — not a replay of
+    // three hundred missed frames, and not the value it paused on.
+    expect(cb).toHaveBeenCalledTimes(1)
+    expect(clock.second.get()).toBeCloseTo(41.4, 9) // 36.4 + 5s of real time
+    // And the loop genuinely runs again.
+    expect(rafQueue.size).toBe(1)
+    fireFrame(100)
+    expect(cb).toHaveBeenCalledTimes(2)
+    off()
+  })
+
+  it("pauses only its own instance — a second face keeps gliding", () => {
+    const a = mountClock({ timezone: "UTC" })
+    const b = mountClock({ timezone: "UTC" })
+    a.clock.observe(document.createElement("div"))
+    const cbA = vi.fn()
+    const cbB = vi.fn()
+    const offA = a.clock.second.subscribe(cbA)
+    const offB = b.clock.second.subscribe(cbB)
+
+    const io = FakeIntersectionObserver.instances[0]
+    if (io === undefined) throw new Error("no observer was constructed")
+    io.trigger(false)
+    // The shared engine survives for the face still on screen.
+    expect(rafQueue.size).toBe(1)
+    fireFrame(16)
+    expect(cbB).toHaveBeenCalledTimes(1)
+    expect(cbA).not.toHaveBeenCalled()
+    offA()
+    offB()
+  })
+
+  it("disconnects on unmount, and a stale trigger cannot pause what follows", () => {
+    const seen: WatchSources[] = []
+    function Probe() {
+      const clock = useWatchSource({ timezone: "UTC" })
+      seen.push(clock)
+      return <div ref={clock.observe} />
+    }
+    const view = render(<Probe />)
+    const clock = seen[0]
+    if (clock === undefined) throw new Error("hook never ran")
+    const io = FakeIntersectionObserver.instances[0]
+    if (io === undefined) throw new Error("the ref never attached")
+
+    const cb = vi.fn()
+    const off = clock.second.subscribe(cb)
+    io.trigger(false)
+    expect(rafQueue.size).toBe(0) // offscreen: paused
+
+    view.unmount() // React detaches the callback ref with null
+    // Unobserved means visible: the still-subscribed source resumes rather
+    // than staying dark forever behind a dead observer…
+    expect(io.disconnected).toBe(true)
+    expect(rafQueue.size).toBe(1)
+    // …and that dead observer can never pause it again.
+    io.trigger(false)
+    expect(rafQueue.size).toBe(1)
+    fireFrame(16)
+    expect(cb).toHaveBeenCalled()
+    off()
+  })
+
+  it("missing IntersectionObserver: the ref is a no-op and the clock stays live", () => {
+    vi.stubGlobal("IntersectionObserver", undefined)
+    const { clock } = mountClock()
+    expect(() => clock.observe(document.createElement("div"))).not.toThrow()
+    const cb = vi.fn()
+    const off = clock.second.subscribe(cb)
+    expect(rafQueue.size).toBe(1)
+    fireFrame(16)
+    expect(cb).toHaveBeenCalledTimes(1)
+    off()
+  })
+})
+
+describe("reduced motion at the face (§9.6)", () => {
+  it("a glide seconds hand still advances once per second — degraded, never frozen", () => {
+    // The OS preference is on before anything mounts.
+    const listeners = new Set<() => void>()
+    const mql = {
+      matches: true,
+      media: "(prefers-reduced-motion: reduce)",
+      addEventListener: (_type: string, cb: () => void) => {
+        listeners.add(cb)
+      },
+      removeEventListener: (_type: string, cb: () => void) => {
+        listeners.delete(cb)
+      },
+    }
+    vi.stubGlobal("matchMedia", () => mql)
+
+    vi.setSystemTime(T_0330) // 03:30:00.000 — the second hand starts at 0°
+    function Clock() {
+      const clock = useWatchSource({ timezone: "UTC" })
+      return (
+        <Mainplate size={200}>
+          <Hand value={clock.second} length={80} width={1.5} />
+        </Mainplate>
+      )
+    }
+    const { container, unmount } = render(<Clock />)
+    const hand = container.querySelector<SVGGElement>('[data-mp="hand"] > g')
+    if (hand === null) throw new Error("no hand rendered")
+
+    expect(hand.style.rotate).toBe("0deg")
+    expect(raf).not.toHaveBeenCalled() // no rAF loop under the preference
+
+    vi.advanceTimersByTime(1000) // 03:30:01 — the boundary
+    expect(hand.style.rotate).toBe("6deg") // still a working clock: one step per second
+    vi.advanceTimersByTime(1000) // 03:30:02
+    expect(hand.style.rotate).toBe("12deg")
+    unmount()
   })
 })
 

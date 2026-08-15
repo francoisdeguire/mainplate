@@ -9,7 +9,9 @@
  * quartz step. The distinction lives here rather than at the hand because only
  * the scheduler can turn "once a second" into actually sleeping between
  * boundaries (§9.3, §9.10); a hand quantising a rAF feed would leave the loop
- * running at 60fps for nothing.
+ * running at 60fps for nothing. Under `prefers-reduced-motion` the scheduler
+ * degrades glide to the tick regime (§9.6) — one step per second, never a
+ * freeze, because a stopped clock is a bug rather than an accommodation.
  */
 export type Cadence = "glide" | "tick"
 
@@ -53,6 +55,10 @@ export function createTicker(): Ticker {
   let rafId: number | null = null
   let timeoutId: ReturnType<typeof setTimeout> | null = null
   let listening = false
+  // The live `prefers-reduced-motion` list, held only while subscribers exist
+  // — created inside reconcile(), never at module scope, or SSR dies on import.
+  let mql: MediaQueryList | null = null
+  let reduced = false
   // The latest notification's timestamp. Refreshed from `Date.now()` at every
   // wake — never advanced by adding a step, because accumulated deltas drift
   // and a hidden tab would come back replaying the past (§9.9).
@@ -90,8 +96,21 @@ export function createTicker(): Ticker {
     timeoutId = null
     current = Date.now()
     lastSecond = Math.floor(current / MS_PER_SECOND)
+    // Under reduced motion glide rides this timer: degraded to one step per
+    // second, never frozen — a stopped clock is a bug, not an accommodation
+    // (§9.6). The values still track absolute time, so nothing is replayed.
+    if (reduced) notify("glide")
     notify("tick")
     armTimeout()
+  }
+
+  /**
+   * The preference flipped mid-session: re-read the list — not the event, so
+   * a stale or synthetic event cannot desynchronise the flag — and converge.
+   */
+  function onMotionChange() {
+    reduced = mql?.matches ?? false
+    reconcile()
   }
 
   function onVisibility() {
@@ -130,12 +149,35 @@ export function createTicker(): Ticker {
       }
     }
 
+    // The motion preference is one more fact the same convergence consumes:
+    // the query attaches with the first subscriber and detaches with the last,
+    // exactly like the visibility listener. Where `matchMedia` does not exist
+    // (a server, an old runtime), there is simply no preference (§9.6).
+    if (typeof matchMedia !== "undefined") {
+      if (hasSubs && mql === null) {
+        mql = matchMedia("(prefers-reduced-motion: reduce)")
+        reduced = mql.matches
+        // Safari served matchMedia without addEventListener until 14 — a
+        // preference read once but not observed live beats a crash.
+        if (typeof mql.addEventListener === "function") {
+          mql.addEventListener("change", onMotionChange)
+        }
+      } else if (!hasSubs && mql !== null) {
+        if (typeof mql.removeEventListener === "function") {
+          mql.removeEventListener("change", onMotionChange)
+        }
+        mql = null
+        reduced = false
+      }
+    }
+
     const running = hasSubs && !(hasDocument && document.visibilityState === "hidden")
     // Glide needs every frame, so its loop runs and tick rides it at boundary
     // crossings — one loop for both cadences (§9.10). Only a tick-only ticker
-    // earns the sleeping timer.
-    const wantRaf = running && subs.glide.size > 0
-    const wantTimeout = running && subs.glide.size === 0
+    // earns the sleeping timer — unless motion is reduced, which demotes glide
+    // into that same timer regime rather than growing a parallel path (§9.6).
+    const wantRaf = running && subs.glide.size > 0 && !reduced
+    const wantTimeout = running && !wantRaf
 
     if (!wantRaf && rafId !== null) {
       cancelAnimationFrame(rafId)

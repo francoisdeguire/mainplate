@@ -15,6 +15,9 @@ describe("useWatchSource on the server", () => {
     expect(typeof window).toBe("undefined")
     expect(typeof document).toBe("undefined")
     expect(typeof requestAnimationFrame).toBe("undefined")
+    // The §9.6/§9.11 observers are browser-only — importing must not touch them.
+    expect(typeof matchMedia).toBe("undefined")
+    expect(typeof IntersectionObserver).toBe("undefined")
   })
 
   it("serves 10:09:36 from every field, stable across renders", async () => {
@@ -47,6 +50,20 @@ describe("useWatchSource on the server", () => {
     expect(values[2]).toBeCloseTo(9.6, 10)
     expect(values[3]).toBe(36)
     expect(values[4]).toBe(0)
+  })
+
+  it("serves the observe ref without touching IntersectionObserver on the server", async () => {
+    const { useWatchSource } = await import("./index")
+    let observeType = ""
+    function Face() {
+      const clock = useWatchSource()
+      observeType = typeof clock.observe
+      // renderToString never invokes callback refs, so a face wired for §9.11
+      // renders on the server without an IntersectionObserver existing at all.
+      return <div ref={clock.observe}>{clock.second.get()}</div>
+    }
+    expect(renderToString(<Face />)).toContain(">36<")
+    expect(observeType).toBe("function")
   })
 
   it("feeds useSourceValue's server snapshot the same marketing time", async () => {

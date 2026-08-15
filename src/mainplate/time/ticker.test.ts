@@ -35,6 +35,36 @@ function setVisibility(state: DocumentVisibilityState) {
   document.dispatchEvent(new Event("visibilitychange"))
 }
 
+/**
+ * Hand-rolled `matchMedia`, because this jsdom has none: one controllable
+ * `prefers-reduced-motion` list whose `flip` mutates `matches` and then fires
+ * the change listeners, like the OS toggle would.
+ */
+function stubReducedMotion(initial: boolean) {
+  const listeners = new Set<() => void>()
+  const mql = {
+    matches: initial,
+    media: "(prefers-reduced-motion: reduce)",
+    addEventListener: vi.fn((_type: string, cb: () => void) => {
+      listeners.add(cb)
+    }),
+    removeEventListener: vi.fn((_type: string, cb: () => void) => {
+      listeners.delete(cb)
+    }),
+  }
+  const matchMediaFn = vi.fn(() => mql)
+  vi.stubGlobal("matchMedia", matchMediaFn)
+  return {
+    listeners,
+    matchMediaFn,
+    mql,
+    flip(next: boolean) {
+      mql.matches = next
+      for (const cb of [...listeners]) cb()
+    },
+  }
+}
+
 beforeEach(() => {
   vi.useFakeTimers()
   vi.setSystemTime(BASE)
@@ -317,6 +347,96 @@ describe("lifecycle", () => {
     expect(t.now()).toBe(BASE)
     vi.advanceTimersByTime(123)
     expect(t.now()).toBe(BASE + 123)
+  })
+})
+
+describe("reduced motion (§9.6)", () => {
+  it("degrades glide to a once-per-second step — the clock still advances, never freezes", () => {
+    const motion = stubReducedMotion(true)
+    const t = createTicker()
+    const seen: number[] = []
+    t.subscribe("glide", () => seen.push(t.now()))
+
+    // Degraded means the sleeping timer regime, not a parked engine: no rAF
+    // loop exists, and exactly one boundary timer does.
+    expect(motion.matchMediaFn).toHaveBeenCalledWith("(prefers-reduced-motion: reduce)")
+    expect(raf).not.toHaveBeenCalled()
+    expect(vi.getTimerCount()).toBe(1)
+
+    // Not a freeze: the glide subscriber hears every second boundary, on time.
+    vi.advanceTimersByTime(600) // BASE+600 — the boundary
+    vi.advanceTimersByTime(1000) // BASE+1600
+    vi.advanceTimersByTime(1000) // BASE+2600
+    expect(seen).toEqual([BASE + 600, BASE + 1600, BASE + 2600])
+    expect(raf).not.toHaveBeenCalled()
+    t.stop()
+  })
+
+  it("serves both cadences from the one boundary timer under the preference", () => {
+    stubReducedMotion(true)
+    const t = createTicker()
+    const glide = vi.fn()
+    const tick = vi.fn()
+    t.subscribe("glide", glide)
+    t.subscribe("tick", tick)
+
+    // One timer for both — degradation must not grow a parallel path.
+    expect(vi.getTimerCount()).toBe(1)
+    expect(raf).not.toHaveBeenCalled()
+
+    vi.advanceTimersByTime(600) // the boundary
+    expect(glide).toHaveBeenCalledTimes(1)
+    expect(tick).toHaveBeenCalledTimes(1)
+    t.stop()
+  })
+
+  it("observes the preference live: flipping mid-session swaps regimes, no resubscribe", () => {
+    const motion = stubReducedMotion(false)
+    const t = createTicker()
+    const cb = vi.fn()
+    t.subscribe("glide", cb)
+    expect(rafQueue.size).toBe(1)
+    fireFrame(16) // BASE+16
+    expect(cb).toHaveBeenCalledTimes(1)
+
+    motion.flip(true)
+    // The rAF loop parked and the boundary timer took over, mid-session.
+    expect(rafQueue.size).toBe(0)
+    expect(vi.getTimerCount()).toBe(1)
+    vi.advanceTimersByTime(584) // BASE+600 — the boundary
+    expect(cb).toHaveBeenCalledTimes(2)
+
+    motion.flip(false)
+    // And back: the timer is gone, the loop glides again.
+    expect(vi.getTimerCount()).toBe(0)
+    expect(rafQueue.size).toBe(1)
+    fireFrame(16)
+    expect(cb).toHaveBeenCalledTimes(3)
+    t.stop()
+  })
+
+  it("attaches the change listener with the first subscriber and detaches on the last", () => {
+    const motion = stubReducedMotion(false)
+    const t = createTicker()
+    const off = t.subscribe("glide", vi.fn())
+    expect(motion.listeners.size).toBe(1)
+
+    off()
+    // The stub's own listener set is empty again — nothing left to fire.
+    expect(motion.listeners.size).toBe(0)
+    expect(motion.mql.removeEventListener).toHaveBeenCalledTimes(1)
+    t.stop()
+  })
+
+  it("missing matchMedia: no preference, glide stays glide, nothing crashes", () => {
+    vi.stubGlobal("matchMedia", undefined)
+    const t = createTicker()
+    const cb = vi.fn()
+    t.subscribe("glide", cb)
+    expect(rafQueue.size).toBe(1)
+    fireFrame(16)
+    expect(cb).toHaveBeenCalledTimes(1)
+    t.stop()
   })
 })
 

@@ -13,6 +13,8 @@ describe("ticker in a DOM-less runtime", () => {
     expect(typeof window).toBe("undefined")
     expect(typeof document).toBe("undefined")
     expect(typeof requestAnimationFrame).toBe("undefined")
+    // §9.6's media query is browser-only too — importing must not touch it.
+    expect(typeof matchMedia).toBe("undefined")
   })
 
   it("imports without throwing", async () => {
