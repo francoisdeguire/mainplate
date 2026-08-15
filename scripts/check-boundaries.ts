@@ -11,8 +11,14 @@ import { join } from "node:path"
 // Matches `from ".../time"` and `from ".../time/..."` — barrel and deep,
 // relative or via the `@/mainplate/*` alias — plus the forms without a
 // `from`: a bare side-effect `import ".../time"` and a dynamic
-// `import(".../time")`, both of which still load the module.
-const TIME_IMPORT = /(?:from|import)\s*\(?\s*["'][^"']*\/time(?:\/[^"']*)?["']/
+// `import(".../time")`, both of which still load the module. The quote class
+// includes the backtick so a template-literal dynamic import — valid syntax
+// Biome's quoteStyle never touches, since it only rewrites string literals —
+// cannot slip past. Deliberately ESM-import-only: `require()` is unmatched on
+// purpose, not an oversight — this repo has "module": "ESNext",
+// "moduleResolution": "bundler", and zero require() calls, so there is
+// nothing for it to catch; adding a require pattern would just be dead code.
+const TIME_IMPORT = /(?:from|import)\s*\(?\s*["'`][^"'`]*\/time(?:\/[^"'`]*)?["'`]/
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
