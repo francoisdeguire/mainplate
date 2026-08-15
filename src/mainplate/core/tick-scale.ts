@@ -1,8 +1,9 @@
 /**
- * The tick pipeline. Pure array transformation: zero imports beyond geometry,
- * no React, no DOM.
- * May import: geometry. Must not import: react, time/.
+ * The tick pipeline. Pure array transformation: zero imports beyond errors
+ * and geometry, no React, no DOM.
+ * May import: errors, geometry. Must not import: react, time/.
  */
+import { failSoft } from "./errors"
 import {
   type Degrees,
   type DialUnits,
@@ -142,13 +143,19 @@ export function populate<const I extends PopulateInput>(
   scale: Scale,
 ): ResolvedTick<ItemOf<I>>[]
 export function populate(input: PopulateInput, scale: Scale): ResolvedTick[] {
-  const sources = [input.count !== undefined, input.ticks !== undefined, input.tiers !== undefined]
-  if (sources.filter(Boolean).length !== 1) {
+  const sources = (["count", "ticks", "tiers"] as const).filter((k) => input[k] !== undefined)
+  if (sources.length !== 1) {
     // Not "<Ticks>": `populate` is exported and callable directly, so the
-    // message has to name the input it received, not one of its callers.
-    throw new Error(
+    // message has to name the input it received, not one of its callers. The
+    // production survivor mirrors the branch order below — `ticks` beats
+    // `count` beats `tiers` — marks stated outright are the most deliberate
+    // of the three; none at all populates nothing, which can at least be seen.
+    const survivor =
+      input.ticks !== undefined ? "ticks" : input.count !== undefined ? "count" : undefined
+    failSoft(
       "mainplate: a tick population needs exactly one of `count`, `ticks`, or `tiers`. " +
-        `Received ${sources.filter(Boolean).length}.`,
+        `Received ${sources.length === 0 ? "none" : sources.map((k) => `\`${k}\``).join(" and ")}.`,
+      survivor === undefined ? "Populating no marks." : `Using \`${survivor}\`.`,
     )
   }
 

@@ -1,0 +1,264 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>mainplate — foreignObject fixture</title>
+<style>
+  body { font: 14px/1.6 system-ui, sans-serif; margin: 2rem; background: #0b0b0c; color: #e8e8ea }
+  h1 { font-size: 16px; font-weight: 600 }
+  h2 { font-size: 14px; font-weight: 600; margin: 2.5rem 0 0 }
+  .build { font: 600 12px/1 ui-monospace, monospace; color: #0b0b0c; background: #ffd166;
+           padding: .35em .6em; border-radius: 3px; margin-left: .75rem; vertical-align: 2px }
+  .row { display: flex; gap: 2rem; flex-wrap: wrap; margin-top: 1.5rem }
+  figure { margin: 0 }
+  svg { background: #17171a; border: 1px solid #2a2a30; display: block }
+  figcaption { margin-top: .5rem; font-size: 12px; color: #9a9aa2; max-width: 320px }
+  .pass { color: #6fd08c }
+  .diag { color: #c792ea }
+  .bad { color: #e0452f }
+  b { color: #e8e8ea }
+  a { color: #4a9eff }
+  p { max-width: 68ch }
+
+  /* "Consumer stylesheet" for panel R — deliberately NOT inline styles.
+     These are the classes a consumer's own CSS would define, in the units
+     they would naturally write. Intent in every case: 13 real screen px. */
+  .h-px  { height: 13px }
+  .h-rem { height: 0.8125rem }          /* root is 16px, so 0.8125rem = 13px */
+  .h-em  { font-size: 13px; height: 1em }
+  .t-px  { font-size: 13px; line-height: 13px }
+</style>
+
+<h1>HTML inside the SVG — foreignObject record<span class="build">BUILD 5</span></h1>
+<p>If the marker above does not read <b>BUILD 5</b>, the browser is showing a cached copy —
+   hard-reload before reading anything below.</p>
+
+<p><b>The feature this tested was cut.</b> mainplate does not render consumer HTML inside the SVG.
+   This page is a record of what was found, not a specification — nothing implements from it. The
+   recipe below does work, and is kept because it is the answer to "can HTML go inside an SVG, and
+   what does it cost". The supported way to put HTML on a face is layer composition
+   <i>outside</i> the SVG: stacked absolutely-positioned <code>&lt;Mainplate&gt;</code> roots in a
+   shared relative container with HTML between them. See <code>fixtures/README.md</code> for the
+   full reasoning.</p>
+
+<p>Every SVG here is <code>viewBox="-110 -110 220 220"</code> sized by <code>width</code> and
+   <code>height</code> <b>attributes</b> at 320&nbsp;px, so one user unit is 320/220 screen pixels
+   and the counter-scale is <code>k = 220/320 = 0.6875</code>.</p>
+
+<p><b>The rule this whole file is built around:</b> in Safari, any descendant of a
+   <code>&lt;foreignObject&gt;</code> that acquires a <b>RenderLayer</b> — anything
+   <code>position</code>ed, <code>transform</code>ed, with <code>opacity &lt; 1</code>, or filtered
+   — is reparented into the SVG root's layer, so the viewBox transform never reaches it and the
+   content lands far off the dial.
+   <a href="https://bugs.webkit.org/show_bug.cgi?id=23113">WebKit bug 23113</a>, open since 2009.
+   SVG&nbsp;2 says Safari is wrong; the real fix (LBSE) has landed but is not the default, so
+   nothing should be planned around it. The recipe below routes around the bug by creating no
+   layers at all: <b>positioning by SVG <code>x</code>/<code>y</code> attributes, sizing by
+   <code>zoom</code>, centring by <code>display: grid</code>.</b></p>
+
+<h2>The recipe that works</h2>
+
+<div class="row">
+
+  <figure>
+    <svg viewBox="-110 -110 220 220" width="320" height="320" data-panel="Q1">
+      <circle r="100" fill="none" stroke="#2a2a30"/>
+      <g stroke="#ffd166" stroke-width=".7">
+        <path d="M-9 -100 H9 M0 -109 V-91"/>
+        <path d="M-9 100 H9 M0 91 V109"/>
+      </g>
+      <rect x="-23" y="-11" width="9" height="8.9375" fill="#4a9eff"/>
+      <foreignObject x="-3.78125" y="-103.78125" width="7.5625" height="7.5625">
+        <div xmlns="http://www.w3.org/1999/xhtml" data-ring="12"
+             style="zoom:.6875;width:11px;height:11px;box-sizing:border-box;border:1px solid #4a9eff;border-radius:50%"></div>
+      </foreignObject>
+      <foreignObject x="-3.78125" y="96.21875" width="7.5625" height="7.5625">
+        <div xmlns="http://www.w3.org/1999/xhtml" data-ring="6"
+             style="zoom:.6875;width:11px;height:11px;box-sizing:border-box;border:1px solid #4a9eff;border-radius:50%"></div>
+      </foreignObject>
+      <foreignObject x="-11" y="-11" width="60" height="8.9375">
+        <div xmlns="http://www.w3.org/1999/xhtml" data-text="q1"
+             style="zoom:.6875;width:max-content;height:13px;font:13px/13px system-ui,sans-serif;background:#4a9eff;color:#0b0b0c">13&#8202;px&#8202;text</div>
+      </foreignObject>
+    </svg>
+    <figcaption><b>Q1. Per-item foreignObject + <code>zoom</code>, static flow.</b> Each ring is an
+      11&thinsp;px consumer div in its own foreignObject whose <code>x</code>/<code>y</code> centre
+      it on the crosshair; the text is a consumer <code>13px</code> block beside the 13-px blue
+      ruler. Every div is in static flow with <code>zoom:.6875</code> and nothing else.
+      <span class="pass">PASS = both rings concentric on their crosshairs, and the text block the
+      same height as the ruler, top and bottom flush.</span></figcaption>
+  </figure>
+
+  <figure>
+    <svg viewBox="-110 -110 220 220" width="320" height="320" data-panel="Q2">
+      <circle r="100" fill="none" stroke="#2a2a30"/>
+      <g stroke="#ffd166" stroke-width=".7">
+        <path d="M91 0 H109 M100 -9 V9"/>
+        <path d="M-109 0 H-91 M-100 -9 V9"/>
+      </g>
+      <foreignObject x="89" y="-11" width="22" height="22">
+        <div xmlns="http://www.w3.org/1999/xhtml" data-grid="3"
+             style="zoom:.6875;width:32px;height:32px;display:grid;place-items:center">
+          <div data-ring="3" style="width:11px;height:11px;box-sizing:border-box;border:1px solid #4a9eff;border-radius:50%"></div>
+        </div>
+      </foreignObject>
+      <foreignObject x="-111" y="-11" width="22" height="22">
+        <div xmlns="http://www.w3.org/1999/xhtml" data-grid="9"
+             style="zoom:.6875;width:32px;height:32px;display:grid;place-items:center">
+          <div data-ring="9" style="width:11px;height:11px;box-sizing:border-box;border:1px solid #4a9eff;border-radius:50%"></div>
+        </div>
+      </foreignObject>
+    </svg>
+    <figcaption><b>Q2. Q1 + <code>display: grid</code> centring.</b> The foreignObject box is
+      deliberately bigger than the ring (22 units vs 7.56) and the ring is centred by
+      <code>place-items: center</code> — the layout a library would use for intrinsic-size content
+      such as text. No positioning, no transform. <span class="pass">PASS = both rings concentric
+      on their crosshairs.</span></figcaption>
+  </figure>
+
+  <figure>
+    <svg viewBox="-110 -110 220 220" width="320" height="320" data-panel="T">
+      <circle r="100" fill="none" stroke="#2a2a30"/>
+      <g stroke="#ffd166" stroke-width=".7">
+        <path d="M-9 -100 H9 M0 -109 V-91"/>
+        <path d="M-9 100 H9 M0 91 V109"/>
+      </g>
+      <rect x="-23" y="-11" width="9" height="8.9375" fill="#4a9eff"/>
+      <foreignObject x="-110" y="-110" width="220" height="220">
+        <div xmlns="http://www.w3.org/1999/xhtml" data-t-wrap
+             style="zoom:.6875;width:320px;height:320px;display:grid;font-family:system-ui,sans-serif">
+          <div data-ring="t12" style="grid-area:1/1;place-self:start;margin:9.045455px 0 0 154.5px;width:11px;height:11px;box-sizing:border-box;border:1px solid #4a9eff;border-radius:50%"></div>
+          <div data-ring="t6"  style="grid-area:1/1;place-self:start;margin:299.954545px 0 0 154.5px;width:11px;height:11px;box-sizing:border-box;border:1px solid #4a9eff;border-radius:50%"></div>
+          <div data-text="t"   style="grid-area:1/1;place-self:start;margin:144px 0 0 144px;width:max-content;height:13px;font:13px/13px system-ui,sans-serif;background:#4a9eff;color:#0b0b0c">13&#8202;px&#8202;text</div>
+        </div>
+      </foreignObject>
+    </svg>
+    <figcaption><b>T. The fallback — one full-frame foreignObject, same-cell grid placement.</b> The
+      wrapper is <code>display: grid</code> with <code>zoom:.6875</code>; every item is
+      <code>grid-area: 1/1; place-self: start</code> with a margin in real px. Same-cell grid
+      children overlap without positioning. No element anywhere is positioned or transformed.
+      <span class="pass">PASS = both rings concentric on their crosshairs, and the text block the
+      same height as the blue ruler, flush.</span> Verified, but it swallows pointer events over the
+      whole dial, which per-item foreignObjects do not.</figcaption>
+  </figure>
+
+</div>
+
+<h2>Consumer CSS under the zoom — and the font lattice</h2>
+<p>This is the panel that makes the recipe worth having, and the one that shows its one real cost.
+   <code>zoom</code> scales layout at used-value time, so it cancels the viewBox magnification for
+   the <b>consumer's own stylesheet</b> too — which no counter-scale recipe could do.</p>
+
+<div class="row">
+
+  <figure>
+    <svg viewBox="-110 -110 220 220" width="320" height="320" data-panel="R">
+      <rect x="-58" y="-90"    width="9" height="8.9375" fill="#4a9eff"/>
+      <rect x="-58" y="-72.125" width="9" height="8.9375" fill="#4a9eff"/>
+      <rect x="-58" y="-54.25"  width="9" height="8.9375" fill="#4a9eff"/>
+      <rect x="-58" y="-36.375" width="9" height="8.9375" fill="#4a9eff"/>
+      <foreignObject x="-90" y="-90" width="180" height="180">
+        <div xmlns="http://www.w3.org/1999/xhtml" data-units
+             style="zoom:.6875;width:260px;font-family:system-ui,sans-serif">
+          <div class="h-px"  data-bar="px"  style="width:40px;margin:0 0 13px 0;background:#6fd08c"></div>
+          <div class="h-rem" data-bar="rem" style="width:40px;margin:0 0 13px 0;background:#6fd08c"></div>
+          <div class="h-em"  data-bar="em"  style="width:40px;margin:0 0 13px 0;background:#6fd08c"></div>
+          <div class="t-px"  data-bar="text" style="width:max-content;background:#6fd08c;color:#0b0b0c">13&#8202;px&#8202;class</div>
+        </div>
+      </foreignObject>
+    </svg>
+    <figcaption><b>R. Consumer CSS under the zoom.</b> The four green blocks are sized by a
+      <b>stylesheet</b>, not by the library: <code>height:13px</code>, <code>0.8125rem</code>,
+      <code>1em</code>, and a text block from a <code>font-size:13px</code> class — every one means
+      13 real screen px. The blue rulers are SVG rects of exactly 13 real px at the same rows.
+      <span class="pass">PASS = every green block exactly the height of the blue ruler beside
+      it.</span> <span class="bad">The two <b>box</b> rows (px, rem) are exact in Safari. The two
+      <b>font-derived</b> rows are not: <code>1em</code> renders 13.09 and the text block 11.64,
+      because Safari quantises font sizes and line-heights to integer post-zoom pixels.</span> See
+      the README — integer dial units are fixed points of that rounding, so snapping emitted sizes
+      to them would remove the error for library-emitted text; consumer text would stay on the
+      lattice.</figcaption>
+  </figure>
+
+</div>
+
+<h2>Why the forbidden-property list is not negotiable</h2>
+<p>Each rung below is the one before it plus <b>exactly one property</b>. H is plain static flow.
+   These four panels plus the diagnostic are the whole evidence for the rule at the top of this
+   file, and for the list of properties that must never appear inside a
+   <code>&lt;foreignObject&gt;</code>.</p>
+
+<div class="row">
+
+  <figure>
+    <svg viewBox="-110 -110 220 220" width="320" height="320" data-panel="H">
+      <circle r="100" fill="none" stroke="#2a2a30"/>
+      <foreignObject x="-55" y="-44" width="110" height="88">
+        <div xmlns="http://www.w3.org/1999/xhtml" style="width:110px;height:88px;background:#6fd08c"></div>
+      </foreignObject>
+      <rect x="-55" y="-44" width="110" height="88" fill="none" stroke="#ffd166" stroke-width="1" stroke-dasharray="4 3"/>
+    </svg>
+    <figcaption><b>H. Baseline — static flow, no layer.</b> A plain 110&times;88 div, in flow, no
+      positioning, no children, no scaling. <span class="pass">PASS = the green block exactly fills
+      the dashed rectangle.</span> Passes everywhere, Safari included — which is what proves
+      <code>&lt;foreignObject&gt;</code> itself is sound.</figcaption>
+  </figure>
+
+  <figure>
+    <svg viewBox="-110 -110 220 220" width="320" height="320" data-panel="M1">
+      <circle r="100" fill="none" stroke="#2a2a30"/>
+      <foreignObject x="-55" y="-44" width="110" height="88">
+        <div xmlns="http://www.w3.org/1999/xhtml" style="width:110px;height:88px;position:relative;background:#6fd08c"></div>
+      </foreignObject>
+      <rect x="-55" y="-44" width="110" height="88" fill="none" stroke="#ffd166" stroke-width="1" stroke-dasharray="4 3"/>
+    </svg>
+    <figcaption><b>M1. H + <code>position: relative</code>.</b> The only change from H.
+      <span class="pass">PASS = the green block exactly fills the dashed rectangle.</span>
+      <span class="bad">Fails in Safari</span> — a positioned element gets a RenderLayer.</figcaption>
+  </figure>
+
+  <figure>
+    <svg viewBox="-110 -110 220 220" width="320" height="320" data-panel="M4">
+      <circle r="100" fill="none" stroke="#2a2a30"/>
+      <foreignObject x="-55" y="-44" width="110" height="88">
+        <div xmlns="http://www.w3.org/1999/xhtml" style="width:160px;height:128px;transform:scale(.6875);transform-origin:0 0;background:#6fd08c"></div>
+      </foreignObject>
+      <rect x="-55" y="-44" width="110" height="88" fill="none" stroke="#ffd166" stroke-width="1" stroke-dasharray="4 3"/>
+    </svg>
+    <figcaption><b>M4. H + <code>transform: scale(.6875)</code>.</b> A plain in-flow div sized
+      160&times;128 so that the scale brings it to 110&times;88. <span class="pass">PASS = the green
+      block exactly fills the dashed rectangle.</span> <span class="bad">Fails in Safari</span> — a
+      transformed element gets a RenderLayer. This is what killed the counter-scale recipe.</figcaption>
+  </figure>
+
+  <figure>
+    <svg viewBox="-110 -110 220 220" width="320" height="320" data-panel="M5">
+      <circle r="100" fill="none" stroke="#2a2a30"/>
+      <foreignObject x="-55" y="-44" width="110" height="88">
+        <div xmlns="http://www.w3.org/1999/xhtml" style="width:160px;height:128px;zoom:.6875;background:#6fd08c"></div>
+      </foreignObject>
+      <rect x="-55" y="-44" width="110" height="88" fill="none" stroke="#ffd166" stroke-width="1" stroke-dasharray="4 3"/>
+    </svg>
+    <figcaption><b>M5. H + <code>zoom: .6875</code>.</b> The same step as M4 by the other mechanism.
+      <span class="pass">PASS = the green block exactly fills the dashed rectangle.</span>
+      <span class="pass">Passes in Safari</span> — <code>zoom</code> scales layout and creates no
+      layer. This is the whole reason the recipe above is built on it.</figcaption>
+  </figure>
+
+  <figure>
+    <svg viewBox="-110 -110 220 220" width="320" height="320" data-panel="S">
+      <circle r="100" fill="none" stroke="#2a2a30"/>
+      <foreignObject x="-55" y="-44" width="110" height="88">
+        <div xmlns="http://www.w3.org/1999/xhtml" data-s
+             style="width:110px;height:88px;opacity:.5;background:#6fd08c"></div>
+      </foreignObject>
+      <rect x="-55" y="-44" width="110" height="88" fill="none" stroke="#ffd166" stroke-width="1" stroke-dasharray="4 3"/>
+    </svg>
+    <figcaption><b>S. Diagnostic — H + <span class="diag"><code>opacity: .5</code></span>.</b> Not a
+      recipe. This panel was written as a <b>prediction</b>: bug 23113 says the trigger is "acquires
+      a RenderLayer", which means opacity must fail exactly as <code>position</code> and
+      <code>transform</code> did, even though nothing here is positioned or scaled.
+      <span class="pass">PASS = the half-transparent green block fills the dashed rectangle.</span>
+      <span class="diag">Safari fails it, as predicted.</span> That confirmed prediction is what
+      makes the forbidden-property list evidence rather than a story.</figcaption>
+  </figure>
+
+</div>

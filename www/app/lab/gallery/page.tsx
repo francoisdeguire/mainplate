@@ -1,24 +1,15 @@
 "use client"
 
 /**
- * Client, and not by choice: three of these faces pass functions to `<Ticks>`
- * — a `skip` predicate, a function-valued `length`, and `renderItem`. Functions
- * cannot cross the RSC boundary, so any page that uses the per-mark function
- * forms has to sit inside the client boundary, exactly like a factory-built
- * `Outline`. Nothing here is interactive.
+ * Client, and not by choice: several of these faces pass functions to the
+ * primitives — a `skip` predicate, a function-valued `length` and `fill`, a
+ * `format`, and `renderItem`. Functions cannot cross the RSC boundary, so any
+ * page that uses the per-mark function forms has to sit inside the client
+ * boundary, exactly like a factory-built `Outline`. Nothing here is
+ * interactive.
  */
 import type { ReactNode } from "react"
-import {
-  clearanceRadius,
-  type DialUnits,
-  estimateInk,
-  Mainplate,
-  type Point,
-  polar,
-  quantize,
-  type TickFace,
-  Ticks,
-} from "@/mainplate/core"
+import { type DialUnits, Mainplate, Numerals, type Point, quantize, Ticks } from "@/mainplate/core"
 import { LabNav, ScratchNotice } from "../nav"
 
 const PLATE = "oklch(0.21 0.006 285)"
@@ -30,25 +21,11 @@ const ACCENT = "oklch(0.8 0.13 78)"
 const WELL = "oklch(0.13 0.005 285)"
 
 /* --- numeral clearance ---------------------------------------------------
- * The real mechanism now lives in core: `clearanceRadius` holds the shortest
- * ink-to-tick distance constant. The superseded ray/box prototype below is
- * kept, with its original constants, so the second gauge can show what it
- * got wrong.
+ * The real mechanism now lives in core: `<Numerals track clearance>` holds
+ * the shortest ink-to-tick distance constant. The superseded ray/box
+ * prototype below is kept, with its original constants, so the second gauge
+ * can show what it got wrong.
  */
-
-/** Centre a label so its optical ink clears the tick's inner end by `clearance`. */
-function opticalCentre(
-  angle: number,
-  rotation: number,
-  label: string,
-  fontSize: number,
-  tick: TickFace,
-  clearance: DialUnits,
-): Point {
-  const r = clearanceRadius({ ink: estimateInk(label, fontSize), angle, rotation, tick, clearance })
-  const p = polar(angle, r)
-  return { x: quantize(p.x), y: quantize(p.y) }
-}
 
 /**
  * The superseded prototype: pull the centre in from the anchor by the ray/box
@@ -85,10 +62,10 @@ export default function Gallery() {
 
       <p className="mt-6 max-w-[68ch] text-sm text-dim">
         Six faces built from the primitives that exist today: <code>&lt;Mainplate&gt;</code>,{" "}
-        <code>&lt;Ticks&gt;</code>, and raw SVG. There is no hand, numeral, arc or subdial component
-        yet — every numeral below is a <code>&lt;text&gt;</code> placed by <code>renderItem</code>,
-        and every aperture is a <code>&lt;rect&gt;</code> drawn in the frame&rsquo;s own
-        coordinates.
+        <code>&lt;Ticks&gt;</code>, <code>&lt;Numerals&gt;</code>, and raw SVG. There is no hand or
+        arc component yet — every aperture is a <code>&lt;rect&gt;</code> drawn in the frame&rsquo;s
+        own coordinates, and the one hand-rolled numeral set left is the superseded ray/box
+        prototype, kept to show what the solver fixes.
       </p>
       <p className="mt-3 max-w-[68ch] text-sm text-dim">
         Every <code>renderItem</code> coordinate below is used raw — <code>mark.point</code>,{" "}
@@ -101,7 +78,7 @@ export default function Gallery() {
       <div className="mt-8 grid gap-10 sm:grid-cols-2 xl:grid-cols-3">
         <Figure
           title="Gauge, optical clearance"
-          caption="Every numeral's ink holds the same shortest distance — 3 dial units — from its tick's inner end (r 78, width 2.2), solved by core's clearanceRadius from an estimated optical box: flat cap band, measured advances, corner recession on round glyphs. The 0 and the 220 land on different radii precisely so their gaps read equal."
+          caption="Every numeral's ink holds the same shortest distance — 3 dial units — from its tick's inner end: <Numerals track={{ r: 78, width: 2.2 }} clearance={3}>, which solves each label's radius from an estimated optical box: flat cap band, measured advances, corner recession on round glyphs. The 0 and the 220 land on different radii precisely so their gaps read equal."
         >
           <Mainplate
             size={280}
@@ -120,31 +97,12 @@ export default function Gallery() {
                 { every: 20, length: 14, width: 2.2, fill: INK },
               ]}
             />
-            <Ticks
-              orient="upright"
+            <Numerals
               tiers={[{ every: 20 }]}
-              renderItem={(mark) => {
-                const p = opticalCentre(
-                  mark.angle,
-                  mark.rotation,
-                  String(mark.value),
-                  11,
-                  { r: 78, width: 2.2 },
-                  3,
-                )
-                return (
-                  <text
-                    x={p.x}
-                    y={p.y}
-                    fontSize={11}
-                    textAnchor="middle"
-                    dominantBaseline="central"
-                    fill={MID}
-                  >
-                    {mark.value}
-                  </text>
-                )
-              }}
+              track={{ r: 78, width: 2.2 }}
+              clearance={3}
+              fontSize={11}
+              fill={MID}
             />
             <circle r={4} fill={ACCENT} />
           </Mainplate>
@@ -279,7 +237,7 @@ export default function Gallery() {
 
         <Figure
           title="Compass rose"
-          caption='Degree marks as merged quads; the cardinals are a second <Ticks> using an explicit ticks array whose items carry a label, placed by renderItem with the same optical clearance as the gauge — 4 units of ink-to-tick distance from the cardinal tick ends at r 83. mark.rotation carries what orient resolves to — 0 here, because orient="upright" — for the consumer to apply.'
+          caption="Degree marks as merged quads; the cardinals are <Numerals> over an explicit ticks array whose items carry a label — format reads item.label, typed — with the same optical clearance as the gauge: 4 units of ink-to-tick distance from the cardinal tick ends at r 83. The fill function picks the accent for north by value."
         >
           <Mainplate size={280} max={360} label="Compass rose">
             <circle r={100} fill={PLATE} stroke={EDGE} strokeWidth={0.8} />
@@ -291,37 +249,18 @@ export default function Gallery() {
                 { every: 45, length: 11, width: 2, fill: MID },
               ]}
             />
-            <Ticks
-              orient="upright"
+            <Numerals
               ticks={[
                 { value: 0, label: "N" },
                 { value: 90, label: "E" },
                 { value: 180, label: "S" },
                 { value: 270, label: "W" },
               ]}
-              renderItem={(mark) => {
-                const label = mark.item.label
-                const p = opticalCentre(
-                  mark.angle,
-                  mark.rotation,
-                  label,
-                  17,
-                  { r: 83, width: 2 },
-                  4,
-                )
-                return (
-                  <text
-                    x={p.x}
-                    y={p.y}
-                    fontSize={17}
-                    textAnchor="middle"
-                    dominantBaseline="central"
-                    fill={mark.value === 0 ? ACCENT : INK}
-                  >
-                    {label}
-                  </text>
-                )
-              }}
+              track={{ r: 83, width: 2 }}
+              clearance={4}
+              fontSize={17}
+              format={({ item }) => item.label}
+              fill={({ value }) => (value === 0 ? ACCENT : INK)}
             />
             <circle r={3} fill={EDGE} />
           </Mainplate>

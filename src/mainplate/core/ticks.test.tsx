@@ -209,4 +209,29 @@ describe("<Ticks>", () => {
       ),
     ).toThrow(/only one of/i)
   })
+
+  it("keeps r, logs once and renders in production when both anchors are given", () => {
+    vi.stubEnv("NODE_ENV", "production")
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {})
+    try {
+      const face = (anchor: object) => (
+        <Mainplate max={60}>
+          <Ticks count={4} {...anchor} length={4} width={1} fill="#fff" />
+        </Mainplate>
+      )
+      const both = render(face({ r: 90, inset: 6 }))
+      const rOnly = render(face({ r: 90 }))
+      expect(paths(both.container)[0]?.getAttribute("d")).toBe(
+        paths(rOnly.container)[0]?.getAttribute("d"),
+      )
+
+      render(face({ r: 90, inset: 6 }))
+      expect(spy).toHaveBeenCalledTimes(1)
+      expect(spy.mock.calls[0]?.[0]).toMatch(/mainplate: <Ticks>/)
+      expect(spy.mock.calls[0]?.[0]).toMatch(/Ignoring `inset`/)
+    } finally {
+      spy.mockRestore()
+      vi.unstubAllEnvs()
+    }
+  })
 })
