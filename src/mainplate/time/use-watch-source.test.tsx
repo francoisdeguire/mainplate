@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render } from "@testing-library/react"
+import { act, render } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { Mainplate } from "../core/frame"
 import { Hand } from "../core/hand"
@@ -35,12 +35,22 @@ let nextRafId: number
 let raf: ReturnType<typeof vi.fn>
 let caf: ReturnType<typeof vi.fn>
 
-/** Advance the fake clock, then run every frame callback queued before the advance. */
+/**
+ * Advance the fake clock, then run every frame callback queued before the advance.
+ *
+ * Wrapped in `act`, and that is load-bearing rather than hygiene: outside an
+ * act scope React defers any state update a subscriber schedules, so a
+ * component that *did* re-render on every tick would still look like it
+ * rendered once. The render-count claim below — the plan's central one — is
+ * only a claim at all because the pending work is flushed here.
+ */
 function fireFrame(advanceMs: number) {
-  vi.advanceTimersByTime(advanceMs)
-  const due = [...rafQueue.values()]
-  rafQueue.clear()
-  for (const cb of due) cb(0)
+  act(() => {
+    vi.advanceTimersByTime(advanceMs)
+    const due = [...rafQueue.values()]
+    rafQueue.clear()
+    for (const cb of due) cb(0)
+  })
 }
 
 beforeEach(() => {
