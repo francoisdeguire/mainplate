@@ -4,11 +4,13 @@ Declarative React primitives for analog instrument faces. A speedometer, a
 clock, and a power reserve indicator are the same component with different
 numbers in it.
 
-> **Status: core primitives, not published.** What exists is the geometry, the
-> frame, the outlines, and the full primitive set — `<Dial>`, `<Ticks>`,
-> `<Numerals>`, `<Hand>`, `<Arc>`, `<Subdial>`, `<Place>`. The time layer
-> (`useWatchSource`, motion modes) and the packaged examples do not exist yet.
-> There is no package on npm; the import path below is the in-repo alias.
+> **Status: core, time, and examples — not published.** What exists: the
+> geometry, the frame, the outlines, the full primitive set — `<Dial>`,
+> `<Ticks>`, `<Numerals>`, `<Hand>`, `<Arc>`, `<Subdial>`, `<Place>` — the
+> time layer (`useWatchSource`, glide/tick cadence, reduced-motion and
+> offscreen handling), and four packaged example faces. What does not exist
+> yet: a docs site and a registry, so there is nothing to install — no package
+> on npm; the import path below is the in-repo alias.
 
 ## The idea
 
@@ -42,6 +44,13 @@ where it would be on a circle. Orientation comes from the outline, so every mark
 stands perpendicular to the edge it sits on rather than pointing at the centre.
 Their spacing along the perimeter is therefore uneven, which is correct — the
 angles are evenly spaced, the perimeter is not.
+
+![The packaged Tank example: a railway minute track on a rounded rectangle, radial Roman numerals off the same outline, blued hands at 10:09](assets/tank.png)
+
+That face is the packaged Tank example (`src/mainplate/examples/tank.tsx`,
+live at `/lab/tank`): sixty ties divided evenly by arc length between two
+rails that are the outline itself, and Roman numerals set radially off the
+same case so the hands still point at them.
 
 That claim is a test file rather than an assertion:
 `src/mainplate/core/thesis.test.tsx` pins uneven perimeter spacing, preserved
@@ -100,8 +109,8 @@ const ACCENT = "oklch(0.8 0.13 78)"
 const WELL = "oklch(0.13 0.005 285)"
 
 export function Chronograph() {
-  // No animation layer yet — a bare interval writes the source; the chrono
-  // hand and the elapsed arc subscribe. Zero React renders per update.
+  // No animation primitives yet — a bare interval at tick cadence writes the
+  // source, and the chrono hand and elapsed arc subscribe. Zero React renders.
   useEffect(() => {
     const id = setInterval(() => {
       elapsed.set((Math.round((elapsed.get() + 0.2) * 10) / 10) % 60)
@@ -170,6 +179,84 @@ that land under a register would render half-hidden, which is why the
 (45 under the running-seconds register kept here, 15 under the totaliser the
 full lab face adds at 3 o'clock). `skip` takes domain values or a predicate;
 reach for it whenever a face's own furniture collides.
+
+## Time
+
+The chronograph above never imports the time layer — a stopwatch is just a
+`Source` someone writes. The wall clock is the packaged case:
+`useWatchSource()` serves `hour`, `hour24`, `minute`, `second`, `ms` as five
+stable `Source`s, each carrying its own domain — which is why the hour hand
+below needs no `max={12}`; the source already knows. This component was run
+exactly as written (Chrome, hands checked against the wall clock; it renders
+once and never again while the clock runs):
+
+```tsx
+"use client"
+
+import { Hand, Mainplate, Ticks } from "@/mainplate/core"
+import { useWatchSource } from "@/mainplate/time"
+
+export function Clock() {
+  // Five Sources and an observe ref, created once — this component renders
+  // once, and the hands move outside React from then on.
+  const clock = useWatchSource({ second: "tick" })
+
+  return (
+    <Mainplate ref={clock.observe} size={220} min={0} max={60} label="A clock">
+      <Ticks count={12} inset={4} length={8} width={2} />
+      <Hand value={clock.hour} length={50} width={7} />
+      <Hand value={clock.minute} length={76} width={5} />
+      <Hand value={clock.second} length={88} tail={18} width={1.5} />
+    </Mainplate>
+  )
+}
+```
+
+What the props don't show:
+
+- **One engine per page.** Every `useWatchSource` shares one rAF loop through
+  a lazy singleton ticker — twenty live faces cost one frame callback, not
+  twenty.
+- **`{ second: "tick" }` is the quartz step.** Cadence is a source option
+  rather than a hand prop because only the scheduler can turn "once a second"
+  into actually sleeping between boundaries — a tick-only face runs zero rAF
+  and one timer per second. The default is `"glide"`, the sweep.
+- **`ref={clock.observe}` is opt-in offscreen pausing.** Scrolled out of the
+  viewport, this face releases the shared engine and resyncs to elapsed real
+  time when it scrolls back — never a replay of the backlog. A hidden tab
+  parks the engine the same way. Leave the ref off and the clock simply runs
+  whenever the page is visible.
+- **Reduced motion degrades, never freezes.** Under `prefers-reduced-motion`
+  every glide hand steps once per second instead of sweeping. A stopped clock
+  is a bug, not an accommodation.
+- **On the server every field reads 10:09:36** — the time in every watch
+  advertisement — so SSR output is deterministic and hydration never flakes.
+- **`timezone` is an IANA zone resolved through `Intl`**, never a manual
+  offset: DST breaks offset arithmetic twice a year.
+
+## The examples
+
+Four packaged faces live in `src/mainplate/examples/` — copyable source, not
+a package — each built to prove a claim, with a scratch route to see it live
+(`bun run dev`, then the path):
+
+- **Speedometer** (`/lab/speedo`) — `core`-only, and CI enforces it: the
+  boundary check fails if this file ever imports `time/`. A dashboard never
+  pays for a clock.
+- **Tank** (`/lab/tank`) — the thesis demo pictured above: a railway minute
+  track dividing a rounded rectangle evenly by arc length, radial Roman
+  numerals off the same outline.
+- **Diver** (`/lab/diver`) — a live watch: the rotating bezel is a full-size
+  second frame whose `startAngle` is the only thing a slider touches, applied
+  indices are `renderItem` artwork, the power reserve is a subdial on its own
+  0–1 domain and partial sweep, and three hands run off one `useWatchSource`.
+- **Chronograph** (`/lab/chrono`) — three registers with three domains (60 s,
+  30 min, 12 h), wall time and stopwatch on one face, and a tachymeter from
+  the explicit `ticks` array — authored positions, computed labels.
+
+They share `examples/theme.ts`: a `FaceTheme` of eight named paints,
+`themeVars()` to spread them as `--mp-*` custom properties, and an OKLCH
+gradient-stop helper — typed, demonstrated by all four, deletable.
 
 ## Theming, Tailwind, and dial units
 
@@ -267,9 +354,9 @@ bun run dev     # dev harness at localhost:3000/lab
 bun run check   # typecheck, www typecheck, lint, boundary check, tests
 ```
 
-`bun run check` chains the same five steps CI runs. The boundary check enforces
-the one structural rule the library has so far: nothing in `core/` may import
-from `time/`.
+`bun run check` chains the same five steps CI runs. The boundary check
+enforces the library's two structural rules: nothing in `core/` may import
+from `time/`, and the speedometer example (theme included) may not either.
 
 ## Licence
 
