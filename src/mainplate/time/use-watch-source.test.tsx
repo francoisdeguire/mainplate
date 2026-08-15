@@ -259,19 +259,25 @@ describe("timezone (§9.4)", () => {
 describe("teardown", () => {
   it("the last teardown releases the engine; a double teardown steals nothing", () => {
     const { clock } = mountClock()
-    const offA = clock.second.subscribe(vi.fn())
     const b = vi.fn()
-    const offB = clock.minute.subscribe(b)
-    // Two fields, one engine, one loop.
+    const c = vi.fn()
+    const offA = clock.second.subscribe(vi.fn())
+    const offB = clock.second.subscribe(b)
+    const offC = clock.minute.subscribe(c)
+    // Three listeners across two fields, one engine, one loop.
     expect(raf).toHaveBeenCalledTimes(1)
 
     offA()
-    offA() // a naive refcount would hit zero here and kill b's feed
-    expect(rafQueue.size).toBe(1)
+    offA() // an unguarded refcount hits zero here and detaches b's own field
     fireFrame(16)
-    expect(b).toHaveBeenCalledTimes(1)
+    expect(b).toHaveBeenCalledTimes(1) // b's feed survived the double teardown
+    expect(c).toHaveBeenCalledTimes(1)
 
     offB()
+    fireFrame(16)
+    expect(c).toHaveBeenCalledTimes(2) // minute's feed survives second's teardown
+
+    offC()
     // Observed teardown: the pending frame was cancelled, nothing is scheduled.
     expect(caf).toHaveBeenCalled()
     expect(rafQueue.size).toBe(0)
