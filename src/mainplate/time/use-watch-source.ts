@@ -283,6 +283,9 @@ export type WatchSources = {
    * always "visible". The observer is created on attach — never at module
    * scope, never on the server — and torn down when React detaches the ref on
    * unmount; where `IntersectionObserver` does not exist, this is a no-op.
+   * Attaching to more than one element is last-write-wins: this clock tracks
+   * only the most recently attached element's visibility, not the union of
+   * every element it was ever handed.
    */
   observe: (node: Element | null) => void
 }

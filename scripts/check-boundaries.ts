@@ -18,7 +18,10 @@ import { join } from "node:path"
 // purpose, not an oversight — this repo has "module": "ESNext",
 // "moduleResolution": "bundler", and zero require() calls, so there is
 // nothing for it to catch; adding a require pattern would just be dead code.
-const TIME_IMPORT = /(?:from|import)\s*\(?\s*["'`][^"'`]*\/time(?:\/[^"'`]*)?["'`]/
+// Exported for `check-boundaries.test.ts`, which pins this pattern against
+// the known import forms — a committed regression test, not the manual
+// verification that let a bare-import hole survive two plans.
+export const TIME_IMPORT = /(?:from|import)\s*\(?\s*["'`][^"'`]*\/time(?:\/[^"'`]*)?["'`]/
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {

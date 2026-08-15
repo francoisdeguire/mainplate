@@ -270,6 +270,14 @@ export function Mainplate({
   // below, and the caller — `<Mainplate ref={clock.observe}>` is the
   // documented way to pause a clock offscreen. Merged rather than withheld
   // (contrast `<Arc>`, which owns its path node outright), so both get it.
+  //
+  // Follows the pre-React-19 ref-callback contract: called with the node on
+  // attach and with `null` on detach, never anything in between. React 19
+  // lets a callback ref return its own cleanup function in place of that
+  // `null` call, but this one doesn't — a caller's ref is simply forwarded
+  // bare, so any cleanup it returns is ignored, not chained. Every known
+  // consumer (`clock.observe`, a plain `useRef`) already expects `null` on
+  // detach, so this costs nothing today.
   const composedRef = useCallback(
     (node: SVGSVGElement | null) => {
       rootRef.current = node
