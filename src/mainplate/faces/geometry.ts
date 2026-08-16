@@ -165,6 +165,10 @@ function transformOf(
  * point, which stays the mark's centre. To grow a mark inward from the edge,
  * pass the inset of its midpoint — the geometry here is deliberately not
  * opinionated about which end is anchored.
+ *
+ * Assumes the face box is centred on the frame origin; true for every built-in
+ * outline, which is why `boxW`/`boxH` are all it takes rather than the whole
+ * `Rect`.
  */
 export function markTransform(
   outline: Outline,
@@ -188,12 +192,12 @@ export function markTransform(
     ? outline.pointAtLength(placement.along, inset)
     : outline.pointAt(placement.angle, inset)
 
-  // `normalAt` points inward by contract and `normalAtLength` outward: a mark
+  // `normalAt` points inward by contract and `outwardNormalAtLength` outward: a mark
   // faces away from the face, so the angular one is negated and the perimeter
   // one is not. This asymmetry is the sign bug the spike shipped; it lives at
   // exactly one line now.
   const outward = byLength
-    ? outline.normalAtLength(placement.along, inset)
+    ? outline.outwardNormalAtLength(placement.along, inset)
     : negate(outline.normalAt(placement.angle, inset))
 
   // Angular placement knows its own rotation exactly — no `atan2` round trip,

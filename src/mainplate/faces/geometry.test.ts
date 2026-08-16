@@ -262,6 +262,38 @@ describe("spanTransform — the radial-span tick", () => {
     expect(widened.widthCqw).toBeGreaterThan(straight.widthCqw)
   })
 
+  it("carries the width correction continuously across a flank/arc seam", () => {
+    // The obliquity cosine is sampled from normalAt at i0, so the seam that
+    // matters is the INSET outline's: insetting moves the flank in but leaves
+    // the corner centre fixed, which pushes the flank->arc join from 29.86deg
+    // at the edge to 31.12deg at inset 6. Straddling it is the one place the
+    // sampling could jump, since the flank contributes a constant normal and
+    // the arc a turning one.
+    const seam = (Math.atan2(70, 100 / 0.82 - 6) * 180) / Math.PI
+    expect(seam).toBeCloseTo(31.1194704, 6)
+    const widthAt = (angle: number) =>
+      spanTransform(tank, angle, 6, 16, { width: 2, obliquityWidth: true, ...box }).widthCqw
+
+    // Measured, not asserted-and-hoped: the correction peaks AT the seam and
+    // falls away on both sides, one quantisation step per thousandth of a
+    // degree. Continuous in value; the slope kinks, which is what a tangent
+    // join is — the normal's direction matches, its rate of change does not.
+    const onFlank = widthAt(seam - 0.001)
+    const atSeam = widthAt(seam)
+    const onArc = widthAt(seam + 0.001)
+    expect(onFlank).toBe(1.0619)
+    expect(atSeam).toBe(1.0619)
+    expect(onArc).toBe(1.0618)
+    expect(Math.abs(onArc - onFlank)).toBeLessThanOrEqual(0.0002)
+    // Widening a hundredth of a degree either side moves it by half a
+    // thousandth of a cqw — no cliff, on either side.
+    expect(Math.abs(widthAt(seam + 0.01) - widthAt(seam - 0.01))).toBeLessThan(0.001)
+    // And the correction is genuinely applied on both sides, not skipped.
+    for (const w of [onFlank, atSeam, onArc]) {
+      expect(w).toBeGreaterThan(quantize((2 / 220) * 100))
+    }
+  })
+
   it("leaves the width alone where the ray meets the edge square on", () => {
     const straight = spanTransform(tank, 0, 6, 16, { width: 2, ...box })
     const widened = spanTransform(tank, 0, 6, 16, { width: 2, obliquityWidth: true, ...box })

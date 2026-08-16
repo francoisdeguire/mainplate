@@ -39,18 +39,21 @@ export type Outline = {
   /**
    * The **outward** unit normal at the point `pointAtLength(s, inset)` returns.
    *
-   * Note the sign: `normalAt` points *inward* — it answers "which way is the
-   * middle" for a mark hung off an angular position — while this points *out*,
-   * because its caller is orienting an element whose top must face away from
-   * the face. The pair is deliberate and the mismatch is the trap: the Plan 5
-   * spike derived this by epsilon-sampling the tangent, inverted the sign, and
-   * rendered a ring of upside-down marks that looked plausible in a thumbnail.
+   * **The name spells the sign because its neighbour points the other way:**
+   * `normalAt` is *inward* — it answers "which way is the middle" for a mark
+   * hung off an angular position — while this is *outward*, because its caller
+   * is orienting an element whose top must face away from the face. Both
+   * signs are deliberate and `normalAt` cannot change (the frozen SVG layer
+   * consumes it), so the qualifier lives here. Unqualified, the pair was the
+   * trap that already bit once: the Plan 5 spike derived this normal by
+   * epsilon-sampling the tangent, inverted the sign, and rendered a ring of
+   * upside-down marks that looked plausible in a thumbnail.
    *
    * Analytic like everything else here — the flank normal is the axis normal,
    * the corner-arc normal is the unit vector from the corner centre out to the
    * point. Never sampled, so it is exact at the seams too.
    */
-  normalAtLength(s: DialUnits, inset?: DialUnits): Point
+  outwardNormalAtLength(s: DialUnits, inset?: DialUnits): Point
 }
 
 /** The default outline: a circle of the nominal dial radius. */
@@ -99,7 +102,7 @@ export function circleOutline(): Outline {
       return angle === null ? { x: 0, y: 0 } : polar(angle, r)
     },
 
-    normalAtLength: (s, inset = 0) => {
+    outwardNormalAtLength: (s, inset = 0) => {
       const angle = angleAtLength(s, radiusAt(inset))
       // On a circle the outward normal *is* the radial direction — which is
       // exactly why a sign error here survives every circular face and only
@@ -148,7 +151,7 @@ function isOutline(v: unknown): v is Outline {
     typeof o.path === "function" &&
     typeof o.length === "function" &&
     typeof o.pointAtLength === "function" &&
-    typeof o.normalAtLength === "function"
+    typeof o.outwardNormalAtLength === "function"
   )
 }
 
@@ -332,7 +335,7 @@ export function rectOutline({
    * Walk `s` units clockwise from the top anchor and report both the point
    * there and the outward unit normal at it.
    *
-   * One walk, two consumers, so `pointAtLength` and `normalAtLength` cannot
+   * One walk, two consumers, so `pointAtLength` and `outwardNormalAtLength` cannot
    * disagree about which segment a distance lands on — the failure that would
    * put a mark on the flank and rotate it as if it were on the corner arc.
    * Both answers are per-segment analytic: a flank's normal is its axis
@@ -424,6 +427,6 @@ export function rectOutline({
 
     pointAtLength: (s, inset = 0) => walk(s, inset).point,
 
-    normalAtLength: (s, inset = 0) => walk(s, inset).normal,
+    outwardNormalAtLength: (s, inset = 0) => walk(s, inset).normal,
   }
 }
