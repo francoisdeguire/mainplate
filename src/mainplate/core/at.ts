@@ -1,6 +1,6 @@
 /**
  * `at`: the one way to say *where* on a face something goes.
- * May import: errors, geometry, outline, frame (types only). Must not import: react, time/.
+ * May import: errors, geometry, outline. Must not import: react, time/, legacy/, faces/.
  *
  * Position on a dial is asked for in three registers — an angle, a clock
  * position, or a literal point — and `<Place>`, `<Subdial>`, `<Numerals>` and
@@ -8,8 +8,24 @@
  * dialect (§2.6). This module is that single answer.
  */
 import { bothAnchorsMessage, failSoft } from "./errors"
-import type { Frame } from "./frame"
-import { type Degrees, type DialUnits, type Point, polar, quantize } from "./geometry"
+import { type Degrees, type DialUnits, type Point, polar, quantize, type Scale } from "./geometry"
+import type { Outline } from "./outline"
+
+/**
+ * The angular coordinate system a face establishes, plus its centre, nominal
+ * radius and outline.
+ *
+ * Engine data, not a component's: `resolveAt` takes one, and every renderer
+ * — the frozen SVG layer's `useFrame`, the HTML face layer — supplies one.
+ * It lives here, beside the vocabulary that consumes it, so neither renderer
+ * owns the shape.
+ */
+export type Frame = Scale & {
+  cx: DialUnits
+  cy: DialUnits
+  r: DialUnits
+  outline: Outline
+}
 
 /**
  * A position on the clock face, as consumers say it out loud.

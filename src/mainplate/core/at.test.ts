@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { resolveAt } from "./at"
-import type { Frame } from "./frame"
+import { type Frame, resolveAt } from "./at"
 import { DIAL_RADIUS } from "./geometry"
 import { circleOutline, type Outline, rectOutline } from "./outline"
 

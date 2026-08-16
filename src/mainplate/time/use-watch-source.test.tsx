@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { act, render } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { Mainplate } from "../core/frame"
-import { Hand } from "../core/hand"
 import { isSource } from "../core/source"
+import { Mainplate } from "../legacy/frame"
+import { Hand } from "../legacy/hand"
 import * as barrel from "./index"
 import { getTicker } from "./ticker"
 import { useWatchSource, type WatchSourceOptions, type WatchSources } from "./use-watch-source"

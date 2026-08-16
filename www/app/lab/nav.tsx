@@ -2,23 +2,10 @@ import Link from "next/link"
 
 /**
  * Shared chrome for the lab routes. Scratch furniture, not part of the library
- * and not part of the eventual docs site — it exists so the four exploration
- * pages are reachable from one another while the API is being felt out.
+ * and not part of the eventual docs site — it exists so the exploration pages
+ * are reachable from one another while the API is being felt out.
  */
 const ROUTES = [
-  { href: "/lab", label: "thesis" },
-  { href: "/lab/playground", label: "playground" },
-  { href: "/lab/orient", label: "orient" },
-  { href: "/lab/hand", label: "hand" },
-  { href: "/lab/gallery", label: "gallery" },
-  { href: "/lab/live", label: "live" },
-  { href: "/lab/layers", label: "layers" },
-  { href: "/lab/face", label: "face" },
-  { href: "/lab/speedo", label: "speedo" },
-  { href: "/lab/tank", label: "tank" },
-  { href: "/lab/diver", label: "diver" },
-  { href: "/lab/chrono", label: "chrono" },
-  { href: "/lab/twenty", label: "twenty" },
   { href: "/lab/html", label: "html" },
   { href: "/lab/spike", label: "spike" },
 ] as const
