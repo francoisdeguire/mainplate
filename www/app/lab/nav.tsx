@@ -6,6 +6,7 @@ import Link from "next/link"
  * are reachable from one another while the API is being felt out.
  */
 const ROUTES = [
+  { href: "/lab/faces", label: "faces" },
   { href: "/lab/html", label: "html" },
   { href: "/lab/spike", label: "spike" },
 ] as const
