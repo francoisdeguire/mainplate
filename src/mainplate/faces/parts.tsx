@@ -1,8 +1,7 @@
 "use client"
 
 /**
- * The shared face parts: `<Hand>`, `<Cap>`, `<Dial>`, `<Numerals>`, and a
- * minimal `<Ticks>`.
+ * The shared face parts: `<Hand>`, `<Cap>`, `<Dial>`, `<Numerals>`, `<Ticks>`.
  * May import: core, faces/*. One set for every face — flavor lives in the
  * `<Clock>`/`<Gauge>` wrappers, never in part duplicates.
  *
@@ -25,7 +24,17 @@ import {
   useMemo,
   useRef,
 } from "react"
-import { isSource, quantize, type Source, valueToAngle } from "../core"
+import {
+  failSoft,
+  isSource,
+  quantize,
+  type ResolveInput,
+  resolveTicks,
+  type Scale,
+  type Skip,
+  type Source,
+  valueToAngle,
+} from "../core"
 import { bindRotation } from "./bind-rotation"
 import { type MarkTransform, markTransform, type Orient } from "./geometry"
 import { useFaceContext } from "./mainplate"
@@ -94,78 +103,259 @@ export function Dial({ className, style, children, ...rest }: DialProps) {
 
 /* ------------------------------------------------------------------ Ticks */
 
+/**
+ * One mark, as `skip` and `render` receive it.
+ *
+ * `angle` is quantised, like everything else that can reach a style or a text
+ * node: a `render` that prints it must not print a different float on the
+ * server than in the browser.
+ */
+export type TickMark = {
+  /** The domain value this mark stands at. */
+  value: number
+  /** Where it sits, in degrees from 12 o'clock. */
+  angle: number
+  /** Its position in the track's own population — skipping leaves holes rather than renumbering. */
+  index: number
+}
+
 export type TicksProps = {
-  /** `"all"` is the minute track with hour majors; `"quarters"` keeps 12/3/6/9. @default "all" */
+  /**
+   * The pre-composed default track pair: `"all"` is the minute track with hour
+   * majors, `"quarters"` keeps 12/3/6/9. Sugar for the two `count` tracks
+   * below, and ignored the moment `count` or `every` says otherwise.
+   * @default "all"
+   */
   variant?: "all" | "quarters"
+  /**
+   * How many marks, spread evenly across the track's angular range. The
+   * fencepost rule is the arc's: a full turn draws `count` marks and drops the
+   * one that would land on the first, a bounded sweep includes both endpoints.
+   * With no `from`/`to`, the values are simply `0 … count − 1`.
+   */
+  count?: number
+  /** A step in domain units instead of a mark count. Needs `to` — there is no domain to step across without one. */
+  every?: number
+  /** The domain's lower bound, at the start of the sweep. @default 0 */
+  from?: number
+  /** The domain's upper bound, at the end of the sweep. @default the one `count` implies */
+  to?: number
+  /**
+   * Carve holes: a list of domain values, or a predicate. This is what turns a
+   * stack of tracks into one layout — the minute track skips every fifth
+   * minute so the hour track stands in the gap.
+   */
+  skip?: readonly number[] | ((value: number, mark: TickMark) => boolean)
+  /** Distance inward from the outline to the mark's OUTER end, so tracks of different lengths share an edge. @default 4 */
+  inset?: number
+  /** The mark's extent along its own axis, in dial units. */
+  length?: number
+  /** The mark's extent across its own axis, in dial units. */
+  width?: number
+  /** Which way each mark faces. @default "edge" */
+  orient?: Orient
+  /** Where the track's domain starts, in degrees from 12 o'clock. @default 0 */
+  startAngle?: number
+  /** The track's angular span. @default 360 */
+  sweepAngle?: number
   className?: string
+  /**
+   * Replaces each mark's bar. Position, size and rotation stay the part's —
+   * the same division of labour `<Numerals render>` gets — so a custom mark
+   * cannot fall off its ring. The default paint goes with the bar: a custom
+   * mark IS the mark, not a decoration on top of one.
+   */
+  render?: (value: number, mark: TickMark) => ReactNode
 } & Omit<ComponentProps<"div">, "children" | "className">
 
-/** The minute ring's geometry, in dial units. Private: sizing is CSS. */
+/** The tick ring's geometry, in dial units. Private: sizing is CSS. */
 const TICK_INSET = 4
 const MAJOR_LENGTH = 9
 const MAJOR_WIDTH = 2.4
 const MINOR_LENGTH = 5
 const MINOR_WIDTH = 1
 
+/** Slack for asking whether a sweep closes on itself — `populate`'s own rule. */
+const CLOSED_ARC_EPSILON = 1e-9
+
+/** The default pair's hole: every fifth minute belongs to the hour track. */
+const EVERY_FIFTH = (value: number) => value % 5 === 0
+
+/** A custom mark fills the box it was given, centred, exactly as a numeral does. */
+const CENTRED: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+}
+
 /**
- * The minimal tick part: hour majors at angular positions (so the hands point
- * at them), minute minors dividing the perimeter evenly (the chemin-de-fer
- * rhythm — identical on a circle, deliberate on anything else). The full
- * option surface (`count`/`every`/`skip`/`render`, stacked tracks) is the
- * tick-tracks task's; this ships the two variants tier 1 needs.
+ * One tick track. Internal: `<Ticks>` is either this once, or twice.
+ *
+ * Placement is **angular, never by perimeter length**, and that is the change
+ * that makes stacking work at all. A minute at value 5 must sit exactly under
+ * the hour mark at value 5 — otherwise a `skip` carves a hole where no major
+ * stands, which on a circle is invisible and on any shaped face is a broken
+ * ring. Perimeter placement (the chemin-de-fer rhythm the minimal part shipped)
+ * cannot promise that; `markTransform`'s `along` form still can, and the shape
+ * task is where a track that wants it gets the word back.
+ *
+ * The population itself is the engine's — `resolveTicks` already owns the
+ * fencepost rule, the epsilon-matched `skip`, and the runaway-`every` ceiling.
+ * This component adds no arithmetic of its own beyond choosing the domain.
  */
-export function Ticks({ variant = "all", className, style, ...rest }: TicksProps) {
+function Track({
+  count,
+  every,
+  from = 0,
+  to,
+  skip,
+  inset = TICK_INSET,
+  length,
+  width,
+  orient = "edge",
+  startAngle = 0,
+  sweepAngle = 360,
+  major = false,
+  className,
+  style,
+  render,
+  ...rest
+}: TicksProps & { major?: boolean }) {
   const { outline, boxW, boxH, unstyled } = useFaceContext()
-  const marks: ReactNode[] = []
+  const markLength = length ?? (major ? MAJOR_LENGTH : MINOR_LENGTH)
+  const markWidth = width ?? (major ? MAJOR_WIDTH : MINOR_WIDTH)
 
-  const hours = variant === "quarters" ? [0, 3, 6, 9] : [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
-  for (const h of hours) {
-    const t = markTransform(
-      outline,
-      { angle: h * 30, inset: TICK_INSET + MAJOR_LENGTH / 2 },
-      { orient: "edge", width: MAJOR_WIDTH, length: MAJOR_LENGTH, boxW, boxH },
+  // `count` beats `every`: two populations would need a precedence rule, and a
+  // precedence rule is a thing to remember. `every` alone cannot be honoured —
+  // a step with no upper bound populates one mark and looks like a bug — so it
+  // takes the library's programmer-error path rather than degrading in silence.
+  if (count === undefined && every !== undefined && to === undefined) {
+    failSoft(
+      `mainplate: <Ticks every={${every}}> needs a domain to step across — give \`to\` ` +
+        "(and `from` when it is not 0), or say `count` instead.",
+      "Rendering no marks.",
     )
-    marks.push(
-      <div
-        key={`M${h}`}
-        className={className}
-        style={{
-          ...markStyle(t),
-          ...(unstyled ? undefined : { borderRadius: 999, background: "var(--mp-tick-major)" }),
-          ...style,
-        }}
-        {...rest}
-        data-mp="tick"
-      />,
+    return null
+  }
+
+  // The domain a bare `count` implies: one unit a step, so the values are
+  // 0…count−1 whichever way the fencepost falls. A track then reads in the
+  // units its `skip` is written in — `(v) => v % 5 === 0` means every fifth
+  // MARK, which is the only thing it could sensibly mean. The fencepost is the
+  // engine's own: a closed ring drops the mark that would land on the first,
+  // an open sweep keeps both its endpoints, so the step is 1 either way.
+  const closed = Math.abs(sweepAngle) >= 360 - CLOSED_ARC_EPSILON
+  const implied = count === undefined ? 1 : Math.max(closed ? count : count - 1, 1)
+  const scale: Scale = { min: from, max: to ?? from + implied, startAngle, sweepAngle }
+
+  const skipMarks: Skip | undefined =
+    typeof skip === "function"
+      ? (ctx) => skip(ctx.value, { value: ctx.value, angle: quantize(ctx.angle), index: ctx.index })
+      : skip
+  // `<Ticks>` never routes here without a population; the empty tier is the
+  // type system's share of that argument rather than a case that happens.
+  const input: ResolveInput =
+    count !== undefined
+      ? { count, skip: skipMarks }
+      : { tiers: every === undefined ? [] : [{ every }], skip: skipMarks }
+  const marks = resolveTicks(input, scale)
+
+  return (
+    <>
+      {marks.map((mark) => {
+        const angle = quantize(valueToAngle(mark.value, scale))
+        const t = markTransform(
+          outline,
+          // `inset` names the mark's outer end; `markTransform` places its
+          // centre. One conversion, so two tracks of different lengths line up
+          // along their outer edge rather than their middles.
+          { angle, inset: inset + markLength / 2 },
+          { orient, width: markWidth, length: markLength, boxW, boxH },
+        )
+        return (
+          <div
+            key={mark.index}
+            className={className}
+            style={{
+              ...markStyle(t),
+              ...(render === undefined ? undefined : CENTRED),
+              ...(unstyled || render !== undefined
+                ? undefined
+                : {
+                    borderRadius: 999,
+                    background: major ? "var(--mp-tick-major)" : "var(--mp-tick)",
+                  }),
+              ...style,
+            }}
+            {...rest}
+            data-mp="tick"
+          >
+            {render?.(mark.value, { value: mark.value, angle, index: mark.index })}
+          </div>
+        )
+      })}
+    </>
+  )
+}
+
+/**
+ * A tick track — and, stacked, every tick layout there is.
+ *
+ * **This is what replaced `tiers`.** The SVG layer merged tiers into one path
+ * because a path is one node and later-tier-wins was how two rhythms shared a
+ * position. HTML merges nothing: each mark is already its own element, so two
+ * `<Ticks>` elements are two tracks, and `skip` is how the lower one gets out
+ * of the upper one's way. The classic minute+hour dial, in full:
+ *
+ * ```tsx
+ * <Ticks count={60} skip={(v) => v % 5 === 0} />
+ * <Ticks count={12} length={9} width={2.4} style={{ background: "var(--mp-tick-major)" }} />
+ * ```
+ *
+ * — which is what a bare `<Ticks/>` renders, because the default pair below is
+ * that composition and nothing else (it reaches its own ramp directly rather
+ * than through `style`; a hand-written track says so, since paint is
+ * appearance and appearance is `className`/`style` by contract). There is no
+ * collision rule to learn, no tier index, and no way for one track to silently
+ * swallow another's mark: what is written is what is drawn, in the order it is
+ * written.
+ */
+export function Ticks({
+  variant = "all",
+  count,
+  every,
+  from,
+  to,
+  skip,
+  length,
+  width,
+  ...shared
+}: TicksProps) {
+  // Anything that states a population is one explicit track; `variant` is only
+  // consulted when nothing does.
+  if (count !== undefined || every !== undefined) {
+    return (
+      <Track
+        count={count}
+        every={every}
+        from={from}
+        to={to}
+        skip={skip}
+        length={length}
+        width={width}
+        {...shared}
+      />
     )
   }
 
-  if (variant === "all") {
-    const ring = outline.length(TICK_INSET + MINOR_LENGTH / 2)
-    for (let i = 0; i < 60; i++) {
-      if (i % 5 === 0) continue // a major already holds this minute
-      const t = markTransform(
-        outline,
-        { along: (i / 60) * ring, inset: TICK_INSET + MINOR_LENGTH / 2 },
-        { orient: "edge", width: MINOR_WIDTH, length: MINOR_LENGTH, boxW, boxH },
-      )
-      marks.push(
-        <div
-          key={`m${i}`}
-          className={className}
-          style={{
-            ...markStyle(t),
-            ...(unstyled ? undefined : { borderRadius: 999, background: "var(--mp-tick)" }),
-            ...style,
-          }}
-          {...rest}
-          data-mp="tick"
-        />,
-      )
-    }
-  }
-
-  return <>{marks}</>
+  // The majors first, as the minimal part drew them: they are the marks a
+  // consumer's `className` most often means, and DOM order is z-order.
+  return (
+    <>
+      <Track count={variant === "quarters" ? 4 : 12} major {...shared} />
+      {variant === "all" ? <Track count={60} skip={EVERY_FIFTH} {...shared} /> : null}
+    </>
+  )
 }
 
 /* --------------------------------------------------------------- Numerals */

@@ -133,6 +133,63 @@ function DomainTrio() {
   )
 }
 
+/** The one line a track writes to reach the prominent ramp. */
+const MAJOR_INK = { background: "var(--mp-tick-major)" }
+
+/**
+ * The classic minute+hour layout, written out: a 60-mark track with a hole
+ * every fifth minute, and a 12-mark track standing in the holes. This is what
+ * replaced `tiers` — two elements, no merge rule.
+ */
+function StackedTracks() {
+  const clock = useWatchSource()
+  return (
+    <Mainplate label="Stacked tick tracks: minutes and hours" className="w-56">
+      <Dial />
+      <Ticks count={60} skip={(v) => v % 5 === 0} />
+      <Ticks count={12} length={9} width={2.4} style={MAJOR_INK} />
+      <Hand value={clock.hour} type="hour" />
+      <Hand value={clock.minute} type="minute" />
+      <Cap />
+    </Mainplate>
+  )
+}
+
+/** Three tracks, two skips: minutes, hours-minus-quarters, and the quarters. */
+function ThreeTracks() {
+  return (
+    <Mainplate label="Three tick tracks" className="w-56">
+      <Dial />
+      <Ticks count={60} skip={(v) => v % 5 === 0} />
+      <Ticks count={12} skip={(v) => v % 3 === 0} length={8} width={2} style={MAJOR_INK} />
+      <Ticks count={4} length={13} width={3} style={MAJOR_INK} />
+      <Cap />
+    </Mainplate>
+  )
+}
+
+/** `render` per mark: the box keeps its place, the child is the mark. */
+function DiamondTrack() {
+  return (
+    <Mainplate label="Diamond indices" className="w-56">
+      <Dial />
+      <Ticks count={60} skip={(v) => v % 5 === 0} />
+      <Ticks
+        count={12}
+        length={5.5}
+        width={5.5}
+        render={() => (
+          <div
+            className="size-full rotate-45"
+            style={{ background: "var(--mp-tick-major)", borderRadius: "0.4cqw" }}
+          />
+        )}
+      />
+      <Cap />
+    </Mainplate>
+  )
+}
+
 /** The frozen 10:09:36 pose — the numeral row is judged on shape, not on time. */
 const POSE = new Date("2026-01-15T10:09:36Z")
 
@@ -148,7 +205,7 @@ export default function FacesLab() {
       </h1>
       <LabNav current="/lab/faces" />
       <ScratchNotice />
-      <p className="mt-2 text-[10px] tracking-wide uppercase opacity-40">build 2</p>
+      <p className="mt-2 text-[10px] tracking-wide uppercase opacity-40">build 3</p>
 
       <h2 className={SECTION}>tier 1 — the zero-props bar</h2>
       <div className="mt-4 flex flex-wrap items-center gap-8">
@@ -241,6 +298,28 @@ export default function FacesLab() {
         <div className={CARD}>
           <DomainTrio />
           <p className={NOTE}>{"value 5 through 0-60, 0-30 and 0-12 → 30°, 60°, 150°"}</p>
+        </div>
+      </div>
+
+      <h2 className={SECTION}>tick tracks — stacked, with skip carving the holes</h2>
+      <div className="mt-4 flex flex-wrap items-center gap-8">
+        <div className={CARD}>
+          <StackedTracks />
+          <p className={NOTE}>{"count={60} skip={(v) => v % 5 === 0} + count={12}"}</p>
+        </div>
+        <div className={CARD}>
+          <ThreeTracks />
+          <p className={NOTE}>three tracks, two skips — minutes, hours, quarters</p>
+        </div>
+        <div className={CARD}>
+          <DiamondTrack />
+          <p className={NOTE}>{"render — the box keeps its place, the child is the mark"}</p>
+        </div>
+        <div className={CARD}>
+          <Gauge value={72} max={220} label="Speed" className="w-56">
+            <Ticks count={12} length={6} width={1.4} />
+          </Gauge>
+          <p className={NOTE}>a Ticks child replaces the graduations, keeping the sweep</p>
         </div>
       </div>
 

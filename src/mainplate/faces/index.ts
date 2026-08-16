@@ -11,6 +11,7 @@ export type {
   NumeralOrient,
   NumeralsProps,
   NumeralVariant,
+  TickMark,
   TicksProps,
 } from "./parts"
 export { Cap, Dial, Hand, Numerals, Ticks } from "./parts"

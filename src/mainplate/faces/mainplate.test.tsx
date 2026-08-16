@@ -214,7 +214,7 @@ describe("re-pinning frameBox/dialPercent from faces' side (Task 1 carry)", () =
   })
 })
 
-describe("<Ticks> — minimal", () => {
+describe("<Ticks> — the default track pair", () => {
   it("renders 60 marks by default: 12 majors on the hour angles, 48 minors", () => {
     const { container } = render(
       <Mainplate label="x">
@@ -249,6 +249,155 @@ describe("<Ticks> — minimal", () => {
     const minors = marks.filter((m) => m.style.background === "var(--mp-tick)")
     expect(majors).toHaveLength(12)
     expect(minors).toHaveLength(48)
+  })
+})
+
+describe("<Ticks> — composable tracks", () => {
+  /** Every mark's rotation, wrapped into [0, 360) — `atan2` reports 270 as −90. */
+  function anglesOf(container: ParentNode, selector = '[data-mp="tick"]'): number[] {
+    return [...container.querySelectorAll<HTMLElement>(selector)].map(
+      (m) => ((rotationOf(m) % 360) + 360) % 360,
+    )
+  }
+
+  it("expresses the classic minute+hour layout as two stacked tracks", () => {
+    // The tiers replacement, in the form the spec calls for: a 60-mark minute
+    // track with a hole every fifth minute, and a 12-mark hour track standing
+    // in those holes. Two elements, no merge rule, no later-tier-wins.
+    const { container } = render(
+      <Mainplate label="x">
+        <Ticks count={60} skip={(v) => v % 5 === 0} className="minor" />
+        <Ticks count={12} length={9} width={2.4} className="major" />
+      </Mainplate>,
+    )
+    const minors = anglesOf(container, ".minor")
+    const majors = anglesOf(container, ".major")
+    // The hole count, exactly: sixty minus the twelve the skip carved.
+    expect(minors).toHaveLength(48)
+    expect(majors).toHaveLength(12)
+    expect(container.querySelectorAll('[data-mp="tick"]')).toHaveLength(60)
+
+    // And the holes are at the skipped values, not merely twelve of them: every
+    // surviving minor is a multiple of 6° that is not a multiple of 30°.
+    const expected = [...Array(60).keys()].filter((i) => i % 5 !== 0).map((i) => i * 6)
+    expect(minors).toEqual(expected)
+    expect(majors).toEqual([...Array(12).keys()].map((i) => i * 30))
+    // No minor hides under a major — the whole point of carving the holes.
+    expect(minors.filter((a) => majors.includes(a))).toEqual([])
+  })
+
+  it("skip also takes a list of domain values", () => {
+    const { container } = render(
+      <Mainplate label="x">
+        <Ticks count={12} skip={[0, 6]} />
+      </Mainplate>,
+    )
+    const angles = anglesOf(container)
+    expect(angles).toHaveLength(10)
+    expect(angles).not.toContain(0)
+    expect(angles).not.toContain(180)
+  })
+
+  it("every steps by domain units across from/to, dropping the mark that closes the ring", () => {
+    const { container } = render(
+      <Mainplate label="x">
+        <Ticks every={15} from={0} to={60} />
+      </Mainplate>,
+    )
+    // 0, 15, 30, 45 — and not the 60 that would land on top of the 0.
+    expect(anglesOf(container)).toEqual([0, 90, 180, 270])
+  })
+
+  it("count populates evenly across a bounded sweep, endpoints inclusive", () => {
+    // The gauge's own track: 21 graduations over 270°, the first at the sweep's
+    // start and the last at its end. An open arc has two distinct endpoints, so
+    // both are drawn — a full ring's would coincide and one is dropped.
+    const { container } = render(
+      <Mainplate label="x">
+        <Ticks count={21} startAngle={-135} sweepAngle={270} />
+      </Mainplate>,
+    )
+    const marks = [...container.querySelectorAll<HTMLElement>('[data-mp="tick"]')]
+    expect(marks).toHaveLength(21)
+    const angles = marks.map(rotationOf)
+    expect(angles[0]).toBe(-135)
+    expect(angles[20]).toBe(135)
+    expect(angles[1]).toBe(-121.5) // 270/20 = 13.5° a step
+    // Nothing outside the sweep: the bottom gap stays empty.
+    for (const a of angles) expect(Math.abs(a)).toBeLessThanOrEqual(135)
+  })
+
+  it("every honours a bounded sweep too, keeping the closing mark", () => {
+    const { container } = render(
+      <Mainplate label="x">
+        <Ticks every={10} from={0} to={100} startAngle={-135} sweepAngle={270} />
+      </Mainplate>,
+    )
+    const angles = [...container.querySelectorAll<HTMLElement>('[data-mp="tick"]')].map(rotationOf)
+    expect(angles).toHaveLength(11)
+    expect(angles[0]).toBe(-135)
+    expect(angles[10]).toBe(135)
+  })
+
+  it("render replaces each mark's content and keeps its geometry", () => {
+    const { container } = render(
+      <Mainplate label="x">
+        <Ticks count={4} render={(value, mark) => <span>{`${value}@${mark.angle}`}</span>} />
+      </Mainplate>,
+    )
+    const marks = [...container.querySelectorAll<HTMLElement>('[data-mp="tick"]')]
+    expect(marks.map((m) => m.textContent)).toEqual(["0@0", "1@90", "2@180", "3@270"])
+    // Position and rotation stay the part's — the Numerals contract, verbatim.
+    expect(marks.map(rotationOf).map((a) => ((a % 360) + 360) % 360)).toEqual([0, 90, 180, 270])
+    expect(marks[0]?.style.left).toBe("50%")
+    // The default bar is gone: a custom mark is the mark, not a decoration on
+    // top of one.
+    expect(marks[0]?.style.background).toBe("")
+  })
+
+  it("an explicit track paints from the minor ramp, and unstyled strips it", () => {
+    const { container } = render(
+      <Mainplate label="x">
+        <Ticks count={4} />
+      </Mainplate>,
+    )
+    const mark = container.querySelector<HTMLElement>('[data-mp="tick"]')
+    expect(mark?.style.background).toBe("var(--mp-tick)")
+    expect(mark?.style.borderRadius).toBe("999px")
+
+    const { container: bare } = render(
+      <Mainplate label="x" unstyled>
+        <Ticks count={4} />
+      </Mainplate>,
+    )
+    const plain = bare.querySelector<HTMLElement>('[data-mp="tick"]')
+    expect(plain?.style.background).toBe("")
+    expect(plain?.style.borderRadius).toBe("")
+  })
+
+  it("every without a domain to step across says so", () => {
+    expect(() =>
+      render(
+        <Mainplate label="x">
+          <Ticks every={5} />
+        </Mainplate>,
+      ),
+    ).toThrow(/mainplate:/)
+  })
+
+  it("the default variant is those same two tracks, placed by angle", () => {
+    // The strengthening this task's placement change earns: on a shaped face,
+    // angular placement puts the minute at value 5 exactly under the hour mark
+    // at value 5, and perimeter placement does not. `radial` reports the
+    // placement angle verbatim, so the marks can be read straight off.
+    const { container } = render(
+      <Mainplate label="x" shape={{ ratio: 0.82, radius: 30 }}>
+        <Ticks orient="radial" />
+      </Mainplate>,
+    )
+    const angles = anglesOf(container)
+    expect(angles).toHaveLength(60)
+    expect([...angles].sort((a, b) => a - b)).toEqual([...Array(60).keys()].map((i) => i * 6))
   })
 })
 
@@ -1105,6 +1254,11 @@ describe("quantisation — every inline style value parses to ≤4dp", () => {
         <Mainplate label="Live" shape={{ ratio: 0.82, radius: 30 }}>
           <Dial />
           <Ticks />
+          {/* Stacked tracks on bounded, deliberately ugly sweeps: 200° over
+              seven marks is 33.333…° a step, and a 0–30 domain read across it
+              repeats too. Both reach the style through `markTransform`. */}
+          <Ticks count={7} startAngle={-100} sweepAngle={200} inset={30} orient="radial" />
+          <Ticks every={7} from={0} to={30} startAngle={-100} sweepAngle={200} inset={36} />
           {/* Both derived orientations, on the shape whose normals are not the
               ray: `tangential` reaches the style through `atan2`, which is
               exactly where an unquantised float would get in. */}

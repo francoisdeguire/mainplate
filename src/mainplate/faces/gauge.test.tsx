@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import { createSource } from "../core/source"
 import { Clock } from "./clock"
 import { Gauge } from "./gauge"
-import { Hand } from "./parts"
+import { Hand, Ticks } from "./parts"
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -187,6 +187,76 @@ describe("<Gauge> — controlled values animate", () => {
     const src = createSource(20, { min: 0, max: 100 })
     const { container } = render(<Gauge value={src} />)
     expect(needleOf(container).style.transition).toBe("")
+  })
+})
+
+describe("<Gauge> — graduations", () => {
+  function ticksOf(container: HTMLElement): HTMLElement[] {
+    return [...container.querySelectorAll<HTMLElement>('[data-mp="tick"]')]
+  }
+
+  it("a needle gauge is graduated: 21 marks over the sweep, majors every fourth", () => {
+    // The spike's finding, made structural (spec §12): a needle without marks
+    // reads as a toy. Two stacked `<Ticks>` tracks — the same composition a
+    // clock's minute+hour layout is — carry it.
+    const { container } = render(<Gauge value={50} />)
+    const marks = ticksOf(container)
+    expect(marks).toHaveLength(21)
+    const majors = marks.filter((m) => m.style.background === "var(--mp-tick-major)")
+    const minors = marks.filter((m) => m.style.background === "var(--mp-tick)")
+    expect(majors).toHaveLength(6)
+    expect(minors).toHaveLength(15)
+    // Bounded to the gauge's own sweep, endpoints inclusive, nothing in the
+    // gap at 6 o'clock.
+    const angles = marks.map(rotationOf)
+    expect(Math.min(...angles)).toBe(-135)
+    expect(Math.max(...angles)).toBe(135)
+    // The majors stand on every fourth minor position: 270/5 = 54° apart.
+    expect(majors.map(rotationOf)).toEqual([-135, -81, -27, 27, 81, 135])
+  })
+
+  it("follows a narrowed sweep", () => {
+    const { container } = render(<Gauge value={50} sweep={180} />)
+    const angles = ticksOf(container).map(rotationOf)
+    expect(angles).toHaveLength(21)
+    expect(Math.min(...angles)).toBe(-90)
+    expect(Math.max(...angles)).toBe(90)
+  })
+
+  it("leaves the sweep indicator bare", () => {
+    const { container } = render(<Gauge value={50} indicator="sweep" />)
+    expect(ticksOf(container)).toHaveLength(0)
+  })
+
+  it("leaves the redline band alone", () => {
+    const { container } = render(<Gauge value={50} max={220} redline={[180, 220]} />)
+    expect(container.querySelector('[data-mp="redline"]')?.getAttribute("d")).toMatch(/^M /)
+    expect(ticksOf(container)).toHaveLength(21)
+  })
+
+  it("unstyled strips the graduations' paint, majors included", () => {
+    const { container } = render(<Gauge value={50} unstyled />)
+    const marks = ticksOf(container)
+    expect(marks).toHaveLength(21)
+    for (const mark of marks) {
+      expect(mark.style.background).toBe("")
+      expect(mark.style.borderRadius).toBe("")
+    }
+  })
+
+  it("a Ticks child replaces both default tracks and keeps the gauge's sweep", () => {
+    // The slot rule, on the tick track: the child decides how the marks look
+    // and how many there are; the gauge keeps the angular range, exactly as it
+    // keeps the needle's domain. A track cannot wander off its own arc.
+    const { container } = render(
+      <Gauge value={50}>
+        <Ticks count={5} className="t" />
+      </Gauge>,
+    )
+    const marks = ticksOf(container)
+    expect(marks).toHaveLength(5)
+    expect(marks.every((m) => m.className === "t")).toBe(true)
+    expect(marks.map(rotationOf)).toEqual([-135, -67.5, 0, 67.5, 135])
   })
 })
 

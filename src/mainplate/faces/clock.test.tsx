@@ -376,6 +376,25 @@ describe("<Clock> — slots replace appearance, never the reading", () => {
     expect(rotationOf(free)).toBe(120)
   })
 
+  it("a second Ticks child stacks: the first claims the track, the rest are free", () => {
+    // The tick slot obeys the same first-match rule the hands do, which is what
+    // makes stacked tracks expressible inside `<Clock>` rather than only inside
+    // a bare `<Mainplate>`: one track replaces the clock's own, and every
+    // further track is an ordinary free child with its own geometry.
+    const { container } = render(
+      <Clock time={T_POSE} timezone="UTC">
+        <Ticks count={60} skip={(v) => v % 5 === 0} className="minor" />
+        <Ticks count={12} length={9} width={2.4} className="major" />
+      </Clock>,
+    )
+    expect(container.querySelectorAll(".minor")).toHaveLength(48)
+    expect(container.querySelectorAll(".major")).toHaveLength(12)
+    expect(container.querySelectorAll('[data-mp="tick"]')).toHaveLength(60)
+    // Everything else stayed the clock's.
+    expect(container.querySelectorAll('[data-mp="numeral"]')).toHaveLength(12)
+    expect(handsOf(container)).toHaveLength(3)
+  })
+
   it("the dual-time pattern: a second hour hand on another zone's source", () => {
     function DualTime() {
       const zurich = useWatchSource({ timezone: "Europe/Zurich" })

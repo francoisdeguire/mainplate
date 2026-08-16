@@ -32,12 +32,32 @@ import {
 } from "../core"
 import { Face, type FaceSlot, handSlot, partSlot, usePrefersReducedMotion } from "./face"
 import { useFaceContext } from "./mainplate"
-import { Cap, Dial, Hand, STEP_EASE } from "./parts"
+import { Cap, Dial, Hand, STEP_EASE, Ticks } from "./parts"
 
 /** The arc layer's geometry, in dial units. Private: sizing is CSS. */
 const TRACK_INSET = 10
 const NEEDLE_TRACK_WIDTH = 3
 const SWEEP_TRACK_WIDTH = 11
+
+/**
+ * The graduation ring, in dial units and marks. Sits just inside the track
+ * stroke (whose inner edge is `TRACK_INSET + NEEDLE_TRACK_WIDTH / 2`), and the
+ * majors stop a unit short of the needle's own tip.
+ *
+ * **Twenty-one marks, majors every fourth** — the spike's answer, spec §12,
+ * kept as a constant rather than derived from `min`/`max`: a gauge prints no
+ * numbers beside its graduations, so nothing about the ring wants the domain's
+ * round numbers. It wants a ring the eye can count, and 21/4 is the one that
+ * read best. A domain-derived count is the change to make the day the ring
+ * carries labels.
+ */
+const GRAD_INSET = 12
+const GRAD_COUNT = 21
+const GRAD_MAJOR_EVERY = 4
+const GRAD_MINOR_LENGTH = 4.5
+const GRAD_MINOR_WIDTH = 1
+const GRAD_MAJOR_LENGTH = 8
+const GRAD_MAJOR_WIDTH = 2.2
 
 /**
  * The dash scale the sweep fill is expressed in. `pathLength` re-declares a
@@ -258,6 +278,41 @@ function GaugeArcs({
 }
 
 /**
+ * The graduations: two stacked `<Ticks>` tracks bounded to the gauge's own
+ * sweep — the composable tick part doing tier-1 work, with no gauge-specific
+ * mark code anywhere. The minor track carves a hole every fourth position and
+ * the major track stands in it, which is the clock's minute+hour layout with
+ * different numbers.
+ *
+ * The major ramp arrives as `style`, the way `<Gauge>` already dresses its
+ * needle: the part's own default is the minor ink, and a face that wants the
+ * prominent one says so. `unstyled` is therefore this caller's business too.
+ */
+function Graduations({ scale, unstyled }: { scale: Scale; unstyled: boolean }) {
+  const range = { startAngle: scale.startAngle, sweepAngle: scale.sweepAngle }
+  return (
+    <>
+      <Ticks
+        count={GRAD_COUNT}
+        skip={(value) => value % GRAD_MAJOR_EVERY === 0}
+        inset={GRAD_INSET}
+        length={GRAD_MINOR_LENGTH}
+        width={GRAD_MINOR_WIDTH}
+        {...range}
+      />
+      <Ticks
+        count={(GRAD_COUNT - 1) / GRAD_MAJOR_EVERY + 1}
+        inset={GRAD_INSET}
+        length={GRAD_MAJOR_LENGTH}
+        width={GRAD_MAJOR_WIDTH}
+        style={unstyled ? undefined : { background: "var(--mp-tick-major)" }}
+        {...range}
+      />
+    </>
+  )
+}
+
+/**
  * The bare-mode readout. Live values arrive through the ref the gauge already
  * holds for the meter's value — one subscription serving both, so the number a
  * sighted viewer reads and the number a screen reader announces are the same
@@ -391,6 +446,16 @@ export function Gauge({
     ),
   })
   if (indicator === "hand") {
+    slots.push({
+      key: "ticks",
+      // The gauge keeps the angular range, exactly as it keeps the needle's
+      // domain: a replacement track decides how the marks look and how many
+      // there are, never which arc they sit on. Both default tracks go at
+      // once — one `<Ticks>` child is one tick track, whatever it replaces.
+      wiring: { startAngle: scale.startAngle, sweepAngle: scale.sweepAngle },
+      claims: (el) => el.type === Ticks,
+      node: <Graduations scale={scale} unstyled={unstyled} />,
+    })
     slots.push(
       handSlot(
         "hand",
@@ -458,5 +523,6 @@ export function Gauge({
 
 /** The slots, namespaced for discovery: `<Gauge.Hand className="…"/>`. */
 Gauge.Dial = Dial
+Gauge.Ticks = Ticks
 Gauge.Hand = Hand
 Gauge.Cap = Cap
