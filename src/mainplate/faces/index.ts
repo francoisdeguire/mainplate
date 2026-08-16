@@ -1,5 +1,7 @@
 export type { ClockProps } from "./clock"
 export { Clock } from "./clock"
+export type { ComplicationPosition, ComplicationProps } from "./complication"
+export { Complication } from "./complication"
 export type { GaugeProps } from "./gauge"
 export { Gauge } from "./gauge"
 export type { FaceShape, MainplateProps } from "./mainplate"

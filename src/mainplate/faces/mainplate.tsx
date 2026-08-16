@@ -46,7 +46,7 @@ type LiveHooks = { pause(): void; resume(): void }
  * expressed against. `unstyled` and `registerLive` ride along so paint and
  * liveness need no second context.
  */
-type FaceContextValue = {
+export type FaceContextValue = {
   outline: Outline
   boxW: number
   boxH: number
@@ -62,7 +62,13 @@ type FaceContextValue = {
   registerLive(hooks: LiveHooks): () => void
 }
 
-const FaceContext = createContext<FaceContextValue | null>(null)
+/**
+ * Exported for `<Complication>` alone — the one component allowed to
+ * re-establish the context (scaled, at a resolved point). Deliberately not in
+ * the barrel: a consumer with a legitimate custom face root composes
+ * `<Mainplate>`, never a bare provider.
+ */
+export const FaceContext = createContext<FaceContextValue | null>(null)
 
 /** The face parts' one way in. Throws outside `<Mainplate>` — there is no geometry to fall back to. */
 export function useFaceContext(): FaceContextValue {

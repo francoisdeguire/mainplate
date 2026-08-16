@@ -6,6 +6,7 @@ import { dialPercent, polar } from "../core"
 import { createSource, type Source } from "../core/source"
 import { getTicker } from "../time/ticker"
 import { useWatchSource } from "../time/use-watch-source"
+import { Complication } from "./complication"
 import { Mainplate } from "./mainplate"
 import { Cap, Dial, Hand, Numerals, Ticks } from "./parts"
 
@@ -1325,6 +1326,16 @@ describe("quantisation — every inline style value parses to ≤4dp", () => {
               sweep over a 7-wide domain — neither angle is a round number. */}
           <Hand value={kolkata.hour24} type="hour" variant="line" long />
           <Hand value={10 / 3} min={0} max={7} startAngle={-135} sweepAngle={270} />
+          {/* Both complication modes on the awkward shape: a content anchor at
+              a raw angle (its left/top come straight out of the outline trig),
+              and a nested register whose scale is itself a repeating decimal. */}
+          <Complication at={137.3} inset={12.7}>
+            <span>07</span>
+          </Complication>
+          <Complication at="7h" inset={28} size={26.7}>
+            <Ticks count={7} startAngle={-100} sweepAngle={200} />
+            <Hand value={10 / 3} min={0} max={7} startAngle={-100} sweepAngle={200} />
+          </Complication>
           <Cap />
         </Mainplate>
       )

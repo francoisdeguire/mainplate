@@ -153,6 +153,20 @@ function transformOf(
 }
 
 /**
+ * A dial point as the `left`/`top` percentages of the face box — the anchor a
+ * positioned element pairs with its own `translate(-50%, -50%)`.
+ *
+ * This is `markTransform` minus the mark: a complication's anchor has no
+ * width, length or orientation of its own — its content is arbitrary HTML —
+ * but its position must go through the same quantised box mapping as every
+ * mark, or the one component that positions free content would be the one
+ * place a raw float could reach a style.
+ */
+export function anchorPercent(point: Point, box: BoxOptions): { left: string; top: string } {
+  return { left: percentAlong(point.x, box.boxW), top: percentAlong(point.y, box.boxH) }
+}
+
+/**
  * Place one mark: a point from the outline, a direction to face, a size.
  *
  * This is `place` and `orient` in one call, and it is how every tick, numeral,

@@ -30,6 +30,7 @@ import {
   type Source,
   valueToAngle,
 } from "../core"
+import { Complication } from "./complication"
 import { Face, type FaceSlot, handSlot, partSlot, usePrefersReducedMotion } from "./face"
 import { useFaceContext } from "./mainplate"
 import { Cap, Dial, Hand, STEP_EASE, Ticks } from "./parts"
@@ -526,3 +527,5 @@ Gauge.Dial = Dial
 Gauge.Ticks = Ticks
 Gauge.Hand = Hand
 Gauge.Cap = Cap
+// Not a slot — always a free child — but discovered the same way (spec §2).
+Gauge.Complication = Complication

@@ -117,6 +117,55 @@ describe("a multi-hand face on the server", () => {
   })
 })
 
+describe("a nested live face on the server", () => {
+  it("renders byte-identically with a live register inside a <Complication size>", async () => {
+    const { Mainplate } = await import("./mainplate")
+    const { Complication } = await import("./complication")
+    const { Cap, Dial, Hand, Ticks } = await import("./parts")
+    const { useWatchSource } = await import("../time/use-watch-source")
+    const reserve = createSource(40, { min: 0, max: 100 })
+    function Register() {
+      const clock = useWatchSource({ timezone: "UTC" })
+      return (
+        <Mainplate label="Clock with registers">
+          <Dial />
+          <Ticks />
+          <Hand value={clock.hour} type="hour" />
+          <Hand value={clock.minute} type="minute" />
+          <Complication at="6h" inset={36} size={30}>
+            <Ticks count={12} />
+            <Hand value={clock.second} variant="line" />
+            <Cap />
+          </Complication>
+          <Complication at="9h" inset={36} size={26}>
+            <Hand value={reserve} startAngle={-120} sweepAngle={240} />
+          </Complication>
+          <Cap />
+        </Mainplate>
+      )
+    }
+    const first = renderToString(<Register />)
+    reserve.set(90)
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    expect(renderToString(<Register />)).toBe(first)
+
+    // Every hand — the outer pair and both nested ones — is translate-only.
+    const hands = handStyles(first)
+    expect(hands).toHaveLength(4)
+    for (const style of hands) {
+      expect(style).toContain("translate(-50%")
+      expect(style).not.toContain("rotate(")
+    }
+
+    // The context re-establishment is visible in the markup: the root and
+    // each sized complication are containers, and the boxes are the parent's
+    // dial units as cqw. Content mode adds no third container.
+    expect(first.match(/container-type:inline-size/g)).toHaveLength(3)
+    expect(first).toContain("width:30cqw")
+    expect(first).toContain("width:26cqw")
+  })
+})
+
 describe("<Gauge> on the server", () => {
   it("renders a controlled meter completely: role, bounds, value, readout", async () => {
     const { Gauge } = await import("./gauge")

@@ -18,6 +18,7 @@ import { type ComponentProps, type ReactNode, useMemo } from "react"
 import type { Source } from "../core"
 import { useWatchSource } from "../time"
 import { createWallClock, fieldValue } from "../time/wall-clock"
+import { Complication } from "./complication"
 import { Face, type FaceSlot, handSlot, partSlot } from "./face"
 import type { FaceShape } from "./mainplate"
 import { Cap, Dial, Hand, Numerals, type NumeralVariant, Ticks } from "./parts"
@@ -183,3 +184,5 @@ Clock.Ticks = Ticks
 Clock.Numerals = Numerals
 Clock.Hand = Hand
 Clock.Cap = Cap
+// Not a slot — always a free child — but discovered the same way (spec §2).
+Clock.Complication = Complication

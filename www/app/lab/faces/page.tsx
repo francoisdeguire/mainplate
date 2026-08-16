@@ -9,9 +9,20 @@
  */
 
 import { useState } from "react"
-import { Cap, Clock, Dial, Gauge, Hand, Mainplate, Numerals, Ticks } from "@/mainplate/faces"
+import {
+  Cap,
+  Clock,
+  Complication,
+  Dial,
+  Gauge,
+  Hand,
+  Mainplate,
+  Numerals,
+  Ticks,
+} from "@/mainplate/faces"
 import { useWatchSource } from "@/mainplate/time"
 import { LabNav, ScratchNotice } from "../nav"
+import { DateWindow } from "./date-window"
 
 /** The zero-composition target: dial, ticks, three hands, cap — all live. */
 function SweepFace() {
@@ -215,6 +226,78 @@ function ValuesTrack() {
   )
 }
 
+/**
+ * Content mode: a wordmark under 12. The complication positions the text on
+ * the outer face — no nested context, no new concepts, one element.
+ */
+function BrandFace() {
+  return (
+    <Clock ticks="quarters" numerals="none" label="Clock with a wordmark" className="w-56">
+      <Complication at="12h" inset={34}>
+        <div
+          style={{
+            fontSize: "4.2cqw",
+            fontWeight: 500,
+            letterSpacing: "0.18em",
+            textTransform: "uppercase",
+            whiteSpace: "nowrap",
+            color: "var(--mp-numeral)",
+          }}
+        >
+          mainplate
+        </div>
+      </Complication>
+    </Clock>
+  )
+}
+
+/**
+ * The animated date window at 3 o'clock — content mode holding lab's rolling
+ * number. The button drives it: old digit out the top, new in from below,
+ * one 200ms translateY transition (instant under reduced motion).
+ */
+function DateWindowClock() {
+  const [day, setDay] = useState(14)
+  return (
+    <div className="flex flex-col items-center gap-4">
+      <Clock numerals="none" label="Clock with a date window" className="w-56">
+        <Complication at="3h" inset={26}>
+          <DateWindow value={day} />
+        </Complication>
+      </Clock>
+      <button
+        type="button"
+        onClick={() => setDay((d) => (d % 31) + 1)}
+        className="rounded-full border border-zinc-300 px-4 py-1 text-xs text-zinc-700 hover:bg-zinc-50"
+      >
+        advance the date
+      </button>
+    </div>
+  )
+}
+
+/**
+ * Context mode: a running-seconds register at 6 — the chronograph layout,
+ * zero additional API. `size={26}` re-establishes the face inside, so the
+ * register's ticks, hairline hand and cap are the SAME parts, reading a
+ * fresh centre where dial-unit 100 means 26 parent units.
+ */
+function RegisterClock() {
+  const clock = useWatchSource()
+  return (
+    <Clock second="none" numerals="none" label="Clock with a seconds register" className="w-56">
+      <Complication at="6h" inset={36} size={26}>
+        {/* Chunkier than a root face's marks: the register is 26 parent units
+            across, so dial-unit strokes come out proportionally finer (the
+            Subdial contract) — at w-56 a default mark is sub-pixel. */}
+        <Ticks count={12} length={9} width={3.5} style={MAJOR_INK} />
+        <Hand value={clock.second} variant="line" long style={{ background: "var(--mp-accent)" }} />
+        <Cap />
+      </Complication>
+    </Clock>
+  )
+}
+
 /** The frozen 10:09:36 pose — the numeral row is judged on shape, not on time. */
 const POSE = new Date("2026-01-15T10:09:36Z")
 
@@ -230,7 +313,7 @@ export default function FacesLab() {
       </h1>
       <LabNav current="/lab/faces" />
       <ScratchNotice />
-      <p className="mt-2 text-[10px] tracking-wide uppercase opacity-40">build 4</p>
+      <p className="mt-2 text-[10px] tracking-wide uppercase opacity-40">build 5</p>
 
       <h2 className={SECTION}>tier 1 — the zero-props bar</h2>
       <div className="mt-4 flex flex-wrap items-center gap-8">
@@ -349,6 +432,24 @@ export default function FacesLab() {
         <div className={CARD}>
           <ValuesTrack />
           <p className={NOTE}>{"values={[1, 2, 5, 10, 20, 50, 100]} — stated outright"}</p>
+        </div>
+      </div>
+
+      <h2 className={SECTION}>complications — positioned content and the nested face</h2>
+      <div className="mt-4 flex flex-wrap items-center gap-8">
+        <div className={CARD}>
+          <BrandFace />
+          <p className={NOTE}>
+            {'content mode: <Complication at="12h" inset={34}> — a text block'}
+          </p>
+        </div>
+        <div className={CARD}>
+          <DateWindowClock />
+          <p className={NOTE}>{"the date window — a rolling number in an overflow-hidden frame"}</p>
+        </div>
+        <div className={CARD}>
+          <RegisterClock />
+          <p className={NOTE}>{'context mode: size={26} at "6h" — the same parts, re-based'}</p>
         </div>
       </div>
 
