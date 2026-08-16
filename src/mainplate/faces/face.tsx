@@ -54,10 +54,23 @@ export type FaceSlot = {
    * still wins there, which is §8.10's standing precedence, not a leak.
    */
   wiring: Record<string, unknown>
-  /** Does this child claim this slot? Matched in order, one child per slot. */
+  /**
+   * Does this child claim this slot? Matched in order, **first match only**:
+   * the first child that fits takes the slot over and is re-wired; every later
+   * child of the same shape is an ordinary free child, props untouched, reading
+   * its own source. That is what makes a second hour hand on another timezone
+   * expressible inside `<Clock>` — one slot is a position on the face, not a
+   * filter that swallows every hand of its type.
+   */
   claims: (el: AnyElement) => boolean
   /** The default part, built from the same `wiring` — so the two cannot drift. */
   node: ReactNode
+  /**
+   * Render after the free children rather than before them. The cap wears it:
+   * the pivot cover is the face's topmost element by definition, and content a
+   * consumer adds must not paint over it.
+   */
+  top?: boolean
 }
 
 /** What a wrapper owns about a hand: the reading and the domain it maps through. */
@@ -102,8 +115,8 @@ export function handSlot(
  * A part slot with no wiring at all — dial, ticks, cap. The claim is read off
  * the default node's own component, so naming the part twice is impossible.
  */
-export function partSlot(key: string, node: ReactElement): FaceSlot {
-  return { key, wiring: {}, claims: (el) => el.type === node.type, node }
+export function partSlot(key: string, node: ReactElement, top?: boolean): FaceSlot {
+  return { key, wiring: {}, claims: (el) => el.type === node.type, node, top }
 }
 
 /**
@@ -133,12 +146,20 @@ function flatten(children: ReactNode, prefix: string, out: ReactNode[]): void {
 
 /**
  * Slots in their canonical order, each either the default part or the child
- * that claimed it, followed by every child that claimed nothing.
+ * that claimed it, then every child that claimed nothing, then the slots that
+ * asked to stay on top.
  *
  * Order is the z-order — dial under ticks under hands under cap — so a
  * replacement renders *where its slot was*, not where the caller wrote it. A
  * seconds hand restyled through a slot must not suddenly paint over the cap.
- * Free children come last, on top, which is where added content belongs.
+ * Free children go above the face's own marks, which is where added content
+ * belongs — but below the cap, because the pivot cover is the topmost thing a
+ * face has and a second hand pivoting under it would otherwise cover it.
+ *
+ * A slot takes the FIRST child that claims it and no more (`!claimed.has`),
+ * so `<Clock><Hand type="hour"/><Hand type="hour" value={elsewhere}/></Clock>`
+ * is a styled local hour hand plus a free second-zone one, not two fights over
+ * one position.
  */
 function composeSlots(slots: FaceSlot[], children: ReactNode): ReactNode[] {
   const kids: ReactNode[] = []
@@ -158,13 +179,16 @@ function composeSlots(slots: FaceSlot[], children: ReactNode): ReactNode[] {
     claimed.set(slot.key, cloneElement(el, { ...slot.wiring, key: slot.key }))
   }
 
+  const fill = (s: FaceSlot): ReactNode => {
+    const claimant = claimed.get(s.key)
+    if (claimant !== undefined) return claimant
+    return isValidElement(s.node) ? cloneElement(s.node, { key: s.key }) : s.node
+  }
+
   return [
-    ...slots.map((s) => {
-      const claimant = claimed.get(s.key)
-      if (claimant !== undefined) return claimant
-      return isValidElement(s.node) ? cloneElement(s.node, { key: s.key }) : s.node
-    }),
+    ...slots.filter((s) => s.top !== true).map(fill),
     ...extras,
+    ...slots.filter((s) => s.top === true).map(fill),
   ]
 }
 

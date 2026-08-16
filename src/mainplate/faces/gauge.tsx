@@ -409,7 +409,7 @@ export function Gauge({
         // ink. Defaults, not wiring: a slot child replaces them outright.
         { variant: "taper", style: unstyled ? undefined : { background: "var(--mp-accent)" } },
       ),
-      partSlot("cap", <Cap style={unstyled ? undefined : { background: "var(--mp-ink)" }} />),
+      partSlot("cap", <Cap style={unstyled ? undefined : { background: "var(--mp-ink)" }} />, true),
     )
   }
   if (format !== false) {

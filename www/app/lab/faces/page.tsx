@@ -62,29 +62,22 @@ function SliderGauge() {
 }
 
 /**
- * Dual time: two hour hands on one face, a zone each.
+ * Dual time: two hour hands on one face, a zone each — inside `<Clock>`.
  *
- * Two `useWatchSource` calls give two independent sets of sources; each `<Hand>`
- * carries its own domain, so nothing on the face restates a `max`. The second
- * zone's hand is distinguished by **weight and reach, never by a second colour**
- * — `variant="line"` thins it to a hairline and `long` sends it past the local
- * hour hand's tip. Ink and the one warm red, as everywhere else.
+ * A slot claims the FIRST child that fits it: the bare `<Hand type="hour"/>` takes
+ * the hour slot and stays wired to the clock's own reading, and the second one is
+ * an ordinary free child keeping its own source, its own domain and its own look.
+ * The second zone is distinguished by **weight and reach, never by a second colour**
+ * — `variant="line"` thins it to a hairline, `long` sends it past the local hour
+ * hand's tip. Ink and the one warm red, as everywhere else.
  */
 function DualTimeFace() {
-  const local = useWatchSource()
   const zurich = useWatchSource({ timezone: "Europe/Zurich" })
   return (
-    <Mainplate label="Dual time: local and Zurich" className="w-56">
-      <Dial />
-      <Ticks />
-      <Numerals variant="quarters" />
-      {/* Under the local hands: DOM order is z-order. */}
+    <Clock numerals="quarters" label="Dual time: local and Zurich" className="w-56">
+      <Hand type="hour" />
       <Hand value={zurich.hour} type="hour" variant="line" long />
-      <Hand value={local.hour} type="hour" />
-      <Hand value={local.minute} type="minute" />
-      <Hand value={local.second} type="second" />
-      <Cap />
-    </Mainplate>
+    </Clock>
   )
 }
 
@@ -93,15 +86,13 @@ function DualTimeFace() {
  * revolution is a day — and the hand states no `min`/`max` at all, because
  * `source.domain` beats the `type="hour"` preset (§8.10). The open-ring tip is
  * `children` artwork: the box keeps pivot and rotation, the children own the look.
+ * Weight alone would not have said "different hand" loudly enough here.
  */
 function GmtFace() {
-  const local = useWatchSource()
   const tokyo = useWatchSource({ timezone: "Asia/Tokyo" })
   return (
-    <Mainplate label="GMT: local, with Tokyo on a 24-hour hand" className="w-56">
-      <Dial />
-      <Ticks />
-      <Numerals variant="quarters" />
+    <Clock numerals="quarters" label="GMT: local, with Tokyo on a 24-hour hand" className="w-56">
+      <Hand type="hour" />
       <Hand value={tokyo.hour24} type="hour" long>
         <div className="absolute inset-0 flex flex-col items-center">
           <div
@@ -124,11 +115,7 @@ function GmtFace() {
           />
         </div>
       </Hand>
-      <Hand value={local.hour} type="hour" />
-      <Hand value={local.minute} type="minute" />
-      <Hand value={local.second} type="second" />
-      <Cap />
-    </Mainplate>
+    </Clock>
   )
 }
 
@@ -245,7 +232,7 @@ export default function FacesLab() {
       <div className="mt-4 flex flex-wrap items-center gap-8">
         <div className={CARD}>
           <DualTimeFace />
-          <p className={NOTE}>two hour hands, two zones — the hairline is Zurich</p>
+          <p className={NOTE}>{"inside <Clock> — the hairline is Zurich"}</p>
         </div>
         <div className={CARD}>
           <GmtFace />

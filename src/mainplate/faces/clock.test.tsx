@@ -3,6 +3,7 @@ import { act, render } from "@testing-library/react"
 import { Profiler } from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { getTicker } from "../time/ticker"
+import { useWatchSource } from "../time/use-watch-source"
 import { Clock } from "./clock"
 import { Cap, Dial, Hand, Numerals, Ticks } from "./parts"
 
@@ -343,6 +344,78 @@ describe("<Clock> — slots replace appearance, never the reading", () => {
     expect(hands).toHaveLength(3)
     expect(hands.map((h) => h.className)).toEqual(["", "", "x"])
     expect(hands.map(rotationOf)).toEqual([105, 180, 0])
+  })
+
+  it("a slot claims the FIRST matching child; a second of the same type passes through", () => {
+    // One mechanism, stated once: a slot is a position, not a filter. The first
+    // child that fits it takes it over and is re-wired to the clock's own
+    // reading; every later child of the same shape is an ordinary free child,
+    // props untouched, reading its own.
+    const { container } = render(
+      <Clock time={T_POSE} timezone="UTC">
+        <Hand type="hour" className="a" />
+        <Hand type="hour" value={4} className="b" />
+      </Clock>,
+    )
+    const hands = handsOf(container)
+    expect(hands).toHaveLength(4)
+    const [claimed, minute, second, free] = hands
+    if (
+      claimed === undefined ||
+      minute === undefined ||
+      second === undefined ||
+      free === undefined
+    ) {
+      throw new Error("missing hands")
+    }
+    // The claimed one is the clock's hour hand, in its slot's z-position.
+    expect(claimed.className).toBe("a")
+    expect([claimed, minute, second].map(rotationOf)).toEqual([304.8, 57.6, 216])
+    // The free one kept its own value — 4 of 12 — and its own className.
+    expect(free.className).toBe("b")
+    expect(rotationOf(free)).toBe(120)
+  })
+
+  it("the dual-time pattern: a second hour hand on another zone's source", () => {
+    function DualTime() {
+      const zurich = useWatchSource({ timezone: "Europe/Zurich" })
+      return (
+        <Clock timezone="UTC">
+          {/* claims the slot: styling only, the clock keeps the reading */}
+          <Hand type="hour" className="local" />
+          {/* free: its own zone, its own domain, its own look */}
+          <Hand value={zurich.hour} type="hour" variant="line" long className="zurich" />
+        </Clock>
+      )
+    }
+    const { container } = render(<DualTime />)
+    const hands = handsOf(container)
+    expect(hands).toHaveLength(4)
+    // 03:30 UTC is 04:30 in Zurich (CET, January): 105° and 135°.
+    expect(hands.map(rotationOf)).toEqual([105, 180, 0, 135])
+    expect(hands.map((h) => h.className)).toEqual(["local", "", "", "zurich"])
+    // Both hour hands are live, each on its own engine feed.
+    fireFrame(3_600_000)
+    const moved = hands.map(rotationOf)
+    expect(moved[0]).toBe(135)
+    expect(moved[3]).toBe(165)
+  })
+
+  it("free children render BELOW the cap — the cap is the face's topmost element", () => {
+    const { container } = render(
+      <Clock timezone="UTC">
+        <span data-testid="extra" />
+        <Hand type="hour" value={4} />
+      </Clock>,
+    )
+    const root = container.querySelector<HTMLElement>('[role="img"]')
+    if (root === null) throw new Error("no face root")
+    const kids = [...root.children]
+    const last = kids[kids.length - 1]
+    if (last === undefined) throw new Error("empty face")
+    // DOM order IS z-order on this layer: the pivot cover cannot be painted
+    // over by content a consumer added.
+    expect(last.getAttribute("data-mp")).toBe("cap")
   })
 
   it("children that claim no slot are simply added on top", () => {
