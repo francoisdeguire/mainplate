@@ -15,19 +15,12 @@
  * or view boxes is written here any more. What stays is the gauge's own — how
  * a reading becomes a dash offset, and that the offset GLIDES.
  */
-import {
-  type ComponentProps,
-  type ReactNode,
-  type RefObject,
-  useCallback,
-  useEffect,
-  useRef,
-} from "react"
+import { type ComponentProps, type ReactNode, type RefObject, useEffect, useRef } from "react"
 import { isSource, quantize, type Scale, type Source } from "../core"
 import { Arc } from "./arc"
 import { Complication } from "./complication"
+import { useFaceContext } from "./context"
 import { composes, Face, type FaceSlot, handSlot, partSlot, usePrefersReducedMotion } from "./face"
-import { useFaceContext } from "./mainplate"
 import { Cap, Dial, Hand, STEP_EASE, Ticks } from "./parts"
 
 /** The arc layer's geometry, in dial units. Private: sizing is CSS. */

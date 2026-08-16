@@ -2,13 +2,15 @@
 
 /**
  * `<Mainplate>` — the context root of the HTML face layer.
- * May import: core, faces/palette. Must not be imported by core/ or time/.
+ * May import: core, faces/{arc,context,palette}. Must not be imported by
+ * core/ or time/.
  *
  * One div establishes everything a face's parts share: the outline, the face
  * box the percentages are expressed against, the palette, and the liveness
  * registry that pauses the whole face offscreen. Parts read it through
- * `useFaceContext()`; `<Complication>` will be the one component that
- * re-establishes it scaled. A client component of necessity — React context
+ * `useFaceContext()` — the context itself lives in `context.ts`, a leaf both
+ * this root and the parts depend on; `<Complication>` is the one component
+ * that re-establishes it scaled. A client component of necessity — React context
  * does not cross the Server Component boundary — which is why `shape` is
  * plain data (`OutlineSpec` descriptors), never a factory-built `Outline`.
  *
@@ -19,15 +21,14 @@
 import {
   type ComponentProps,
   type CSSProperties,
-  createContext,
   type ReactNode,
   useCallback,
-  useContext,
   useMemo,
   useState,
 } from "react"
-import { fmt, frameBox, type Outline, resolveOutline } from "../core"
+import { fmt, frameBox, resolveOutline } from "../core"
 import { hoistArcs } from "./arc"
+import { FaceContext, type FaceContextValue, type LiveHooks } from "./context"
 import { paletteVars } from "./palette"
 
 /**
@@ -37,50 +38,6 @@ import { paletteVars } from "./palette"
  * the circle's part defaults.
  */
 export type FaceShape = "circle" | "rect" | { ratio?: number; radius?: number }
-
-/** What a live part must do when its face leaves or re-enters the viewport. */
-type LiveHooks = { pause(): void; resume(): void }
-
-/**
- * What every part reads: the outline it places marks on, and the face box
- * (`frameBox`'s width/height, dial units) its percentages and cqw sizes are
- * expressed against. `unstyled` and `registerLive` ride along so paint and
- * liveness need no second context.
- */
-export type FaceContextValue = {
-  outline: Outline
-  boxW: number
-  boxH: number
-  /** Zero default paint (the sonner escape hatch); parts skip every background. */
-  unstyled: boolean
-  /**
-   * A part driving itself from a `Source` registers here. While at least one
-   * is registered, the Mainplate observes its own root and pauses/resumes
-   * them as the face leaves and re-enters the viewport — offscreen pausing
-   * with no consumer wiring, for any `Source`, because pausing is just
-   * unsubscribing and the time layer's refcount does the rest.
-   */
-  registerLive(hooks: LiveHooks): () => void
-}
-
-/**
- * Exported for `<Complication>` alone — the one component allowed to
- * re-establish the context (scaled, at a resolved point). Deliberately not in
- * the barrel: a consumer with a legitimate custom face root composes
- * `<Mainplate>`, never a bare provider.
- */
-export const FaceContext = createContext<FaceContextValue | null>(null)
-
-/** The face parts' one way in. Throws outside `<Mainplate>` — there is no geometry to fall back to. */
-export function useFaceContext(): FaceContextValue {
-  const ctx = useContext(FaceContext)
-  if (ctx === null) {
-    throw new Error(
-      "mainplate: face parts must render inside <Mainplate> (or a component composed of it).",
-    )
-  }
-  return ctx
-}
 
 /**
  * One face's viewport liveness. Mirrors the time layer's `createVisibility`

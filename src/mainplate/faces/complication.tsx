@@ -50,8 +50,8 @@ import {
   resolveOutline,
 } from "../core"
 import { hoistArcs } from "./arc"
+import { FaceContext, type FaceContextValue, useFaceContext } from "./context"
 import { anchorPercent } from "./geometry"
-import { FaceContext, type FaceContextValue, useFaceContext } from "./mainplate"
 
 /**
  * Where a complication sits, in the words consumers say: a clock position,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { circleOutline, quantize, rectOutline } from "../core"
-import { markTransform, spanTransform } from "./geometry"
+import { circleOutline, createSource, quantize, rectOutline } from "../core"
+import { markTransform, resolveDomain, spanTransform } from "./geometry"
 
 const RAD = Math.PI / 180
 
@@ -344,5 +344,35 @@ describe("degenerate inputs produce numbers, not NaN", () => {
     }
     expect(t.left).toBe("50%")
     expect(t.top).toBe("50%")
+  })
+})
+
+describe("resolveDomain — §8.10 precedence, once, for every part that maps a reading", () => {
+  it("prefers the prop, then the FIRST source that declares a domain, then the default", () => {
+    const wide = createSource(0, { min: 0, max: 400 })
+    const narrow = createSource(0, { min: -5, max: 10 })
+    const bare = createSource(0)
+    const fallback = { min: 0, max: 100 }
+
+    // Nothing said: the part's own default.
+    expect(resolveDomain(undefined, undefined, fallback)).toEqual({ min: 0, max: 100 })
+    expect(resolveDomain(undefined, undefined, fallback, null, bare)).toEqual({ min: 0, max: 100 })
+    // One source, as `<Hand>` calls it.
+    expect(resolveDomain(undefined, undefined, fallback, wide)).toEqual({ min: 0, max: 400 })
+    // The prop outranks it — either bound on its own.
+    expect(resolveDomain(undefined, 220, fallback, wide)).toEqual({ min: 0, max: 220 })
+    expect(resolveDomain(1, undefined, fallback, wide)).toEqual({ min: 1, max: 400 })
+    // Two sources, as `<Arc>` calls it: the list order IS the precedence, so
+    // the `from` endpoint's domain wins and the `to` endpoint's is ignored.
+    expect(resolveDomain(undefined, undefined, fallback, narrow, wide)).toEqual({
+      min: -5,
+      max: 10,
+    })
+    expect(resolveDomain(undefined, undefined, fallback, wide, narrow)).toEqual({
+      min: 0,
+      max: 400,
+    })
+    // A source without a domain does not consume the turn.
+    expect(resolveDomain(undefined, undefined, fallback, bare, wide)).toEqual({ min: 0, max: 400 })
   })
 })

@@ -36,8 +36,8 @@ import {
   valueToAngle,
 } from "../core"
 import { bindRotation } from "./bind-rotation"
-import { type MarkTransform, markTransform, type Orient } from "./geometry"
-import { useFaceContext } from "./mainplate"
+import { useFaceContext } from "./context"
+import { type MarkTransform, markTransform, type Orient, resolveDomain } from "./geometry"
 
 /** Dial units → cqw (percent of the container's inline size), quantised. */
 function cq(u: number, boxW: number): number {
@@ -695,10 +695,14 @@ export function Hand({
   const source = isSource(value) ? value : null
   const controlled = typeof value === "number" ? value : 0
 
-  // §8.10 precedence, prop > source.domain > preset — the same rule the SVG
-  // layer rules by, restated here because this layer is where it now lives.
-  const domainMin = min ?? source?.domain?.min ?? 0
-  const domainMax = max ?? source?.domain?.max ?? preset.max
+  // §8.10 precedence, prop > `source.domain` > preset — resolved by the one
+  // shared helper, so a hand and an arc cannot come to disagree about it.
+  const { min: domainMin, max: domainMax } = resolveDomain(
+    min,
+    max,
+    { min: 0, max: preset.max },
+    source,
+  )
 
   const total = length + preset.tail
   const pivot = quantize((length / total) * 100)

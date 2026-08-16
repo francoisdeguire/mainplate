@@ -2,7 +2,7 @@
 
 /**
  * `<Arc>` — the stroked sweep, and the face's one embedded SVG layer.
- * May import: core, faces/mainplate.
+ * May import: core, faces/{context,geometry}.
  *
  * A stroke is the one thing HTML cannot draw. Everything else on a face is a
  * div — that is the whole point of this layer — but an arc with a round cap
@@ -71,7 +71,8 @@ import {
   type Source,
   valueToAngle,
 } from "../core"
-import { useFaceContext } from "./mainplate"
+import { useFaceContext } from "./context"
+import { resolveDomain } from "./geometry"
 
 /** The arc's own defaults, in dial units. Private: sizing is CSS. */
 const ARC_INSET = 10
@@ -227,11 +228,16 @@ export function Arc({
   const fromSource = isSource(from) ? (from as Source<number>) : null
   const toSource = isSource(to) ? (to as Source<number>) : null
 
-  // Prop, then whichever endpoint declares a domain (written order), then the
-  // percentage default. One rule for both bounds, so a pair of sources cannot
-  // contribute half a domain each and leave the arc mapping through neither.
-  const domainMin = min ?? fromSource?.domain?.min ?? toSource?.domain?.min ?? 0
-  const domainMax = max ?? fromSource?.domain?.max ?? toSource?.domain?.max ?? 100
+  // §8.10 precedence through the shared resolver: the prop, then whichever
+  // endpoint declares a domain — `from` before `to`, the endpoint written
+  // first names the scale — then the percentage default a bare ring reads as.
+  const { min: domainMin, max: domainMax } = resolveDomain(
+    min,
+    max,
+    { min: 0, max: 100 },
+    fromSource,
+    toSource,
+  )
 
   /**
    * The path data, built the one way. The render path and the ref path call

@@ -30,7 +30,40 @@ import {
   type Point,
   polar,
   quantize,
+  type Source,
 } from "../core"
+
+/**
+ * §8.10 precedence, resolved once for every part that maps a reading:
+ * **an explicit prop beats a `Source`'s own `domain`, which beats the part's
+ * own default.**
+ *
+ * It lives in this module rather than in `context.ts` because the domain is
+ * emphatically *not* context — a nested register states its own, and the face
+ * context carries none — while turning a reading into a number is exactly what
+ * this module is for. It takes a LIST of candidate sources because a part may
+ * have more than one: `<Hand>` has a single reading, `<Arc>` has two
+ * endpoints, and the list order is the precedence between them (for `<Arc>`,
+ * `from` before `to` — the endpoint written first names the scale).
+ *
+ * Resolved per bound rather than per source, so a source declaring only half a
+ * domain cannot leave the other half unfilled.
+ */
+export function resolveDomain(
+  min: number | undefined,
+  max: number | undefined,
+  fallback: { min: number; max: number },
+  ...sources: (Source<number> | null | undefined)[]
+): { min: number; max: number } {
+  let lo = min
+  let hi = max
+  for (const source of sources) {
+    if (lo !== undefined && hi !== undefined) break
+    lo = lo ?? source?.domain?.min
+    hi = hi ?? source?.domain?.max
+  }
+  return { min: lo ?? fallback.min, max: hi ?? fallback.max }
+}
 
 /**
  * Which way a mark faces at its point.
