@@ -27,6 +27,7 @@ import {
   useState,
 } from "react"
 import { fmt, frameBox, type Outline, resolveOutline } from "../core"
+import { hoistArcs } from "./arc"
 import { paletteVars } from "./palette"
 
 /**
@@ -235,7 +236,11 @@ export function Mainplate({
         ref={attachRef}
         aria-label={label}
       >
-        {children}
+        {/* One `<svg>` per face, created on demand: `hoistArcs` lifts every
+            `<Arc>` among these children into a single shared layer, at the
+            position the first of them was written. A face with no arc — every
+            clock — gets its children back untouched. */}
+        {hoistArcs(children)}
       </div>
     </FaceContext.Provider>
   )

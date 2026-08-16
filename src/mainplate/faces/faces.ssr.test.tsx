@@ -218,3 +218,45 @@ describe("<Gauge> on the server", () => {
     expect(first).not.toContain("stroke-dashoffset:10;")
   })
 })
+
+describe("<Arc> on the server", () => {
+  it("imports without touching the DOM, and is in the barrel", async () => {
+    const arc = await import("./arc")
+    const barrel = await import("./index")
+    expect(typeof arc.Arc).toBe("function")
+    expect(barrel.Arc).toBe(arc.Arc)
+  })
+
+  it("serves the shared layer and a static arc's whole path", async () => {
+    const { Arc } = await import("./arc")
+    const { Mainplate } = await import("./mainplate")
+    const html = renderToString(
+      <Mainplate label="Ring">
+        <Arc from={0} to={25} />
+        <Arc from={50} to={75} />
+      </Mainplate>,
+    )
+    // One layer, two paths — the composition the client renders, rendered
+    // whole on the server: no portal, nothing deferred to an effect.
+    expect(html.match(/<svg/g)).toHaveLength(1)
+    expect(html.match(/<path/g)).toHaveLength(2)
+    expect(html).toContain('role="presentation"')
+  })
+
+  it("keeps a live endpoint out of the markup entirely", async () => {
+    const { Arc } = await import("./arc")
+    const { Mainplate } = await import("./mainplate")
+    const src = createSource(10, { min: 0, max: 100 })
+    const face = () => (
+      <Mainplate label="Ring">
+        <Arc from={0} to={src} />
+      </Mainplate>
+    )
+    const first = renderToString(face())
+    src.set(90)
+    // Two renders, byte-identical, with the source moved between them: the
+    // arc's `d` is empty until the client's mount write fills it in.
+    expect(renderToString(face())).toBe(first)
+    expect(first).toContain('d=""')
+  })
+})

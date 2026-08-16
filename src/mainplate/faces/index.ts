@@ -1,3 +1,5 @@
+export type { ArcProps } from "./arc"
+export { Arc } from "./arc"
 export type { ClockProps } from "./clock"
 export { Clock } from "./clock"
 export type { ComplicationPosition, ComplicationProps } from "./complication"

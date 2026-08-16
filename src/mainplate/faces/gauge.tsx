@@ -10,8 +10,10 @@
  * apart about how a value becomes a rotation. What is genuinely a gauge's own
  * is here and only here — the arc layer, the readout, and `role="meter"`.
  *
- * The arc layer is INTERNAL at this stage, built straight on the engine's
- * `arcPath`; the public `<Arc>` part arrives with the arc task and absorbs it.
+ * The arc layer is the shared `<Arc>` part now: track, redline and sweep fill
+ * are three arcs on the face's one embedded `<svg>`, and nothing about paths
+ * or view boxes is written here any more. What stays is the gauge's own — how
+ * a reading becomes a dash offset, and that the offset GLIDES.
  */
 import {
   type ComponentProps,
@@ -21,15 +23,8 @@ import {
   useEffect,
   useRef,
 } from "react"
-import {
-  arcPath,
-  frameBox,
-  isSource,
-  quantize,
-  type Scale,
-  type Source,
-  valueToAngle,
-} from "../core"
+import { isSource, quantize, type Scale, type Source } from "../core"
+import { Arc } from "./arc"
 import { Complication } from "./complication"
 import { composes, Face, type FaceSlot, handSlot, partSlot, usePrefersReducedMotion } from "./face"
 import { useFaceContext } from "./mainplate"
@@ -143,76 +138,61 @@ function meterValue(value: number, min: number, max: number, step: number): numb
 }
 
 /**
- * Track, redline and sweep fill: three strokes on one `<svg>` sized to the
- * face box, because a stroke is the one thing HTML cannot draw. Every path
- * comes from the engine's `arcPath`, on the face's own outline, so this layer
- * is already shape-correct for the rect faces the shape task turns on.
+ * The reading as a dash offset over the fixed full-sweep path.
+ *
+ * **CSS cannot interpolate `d`.** Redrawing the arc per value is what a naive
+ * "animate the fill" reaches for, and it produces a hard cut every time. So
+ * the fill's path never changes: it is the whole sweep, declared
+ * `pathLength={SWEEP_UNITS}` so the dash pattern is expressed in hundredths of
+ * it whatever the outline's real length is, and the reading is how much of
+ * that pattern is scrolled into view — a plain number, which a transition
+ * *can* interpolate. Clamped, because a fill cannot overfill the way an
+ * over-range needle can legitimately pin past its stop.
+ *
+ * Quantised, and this one is load-bearing: the live writer below puts this
+ * number straight into a style, where the render path's rounding cannot reach
+ * it. Both writers call this function, so neither can round differently.
  */
-function GaugeArcs({
-  scale,
-  redline,
-  indicator,
+function sweepOffset(value: number, min: number, max: number): number {
+  const span = max - min
+  const fraction = span === 0 ? 0 : (value - min) / span
+  return quantize(SWEEP_UNITS * (1 - Math.min(Math.max(fraction, 0), 1)))
+}
+
+/**
+ * The live sweep fill's wiring — and **no element at all**.
+ *
+ * The fill itself is an ordinary `<Arc>`, which the face's layer host lifts
+ * into the shared `<svg>`. That lift can only see elements, never what a
+ * component returns, so the arc has to stay written in `<Gauge>`'s own
+ * markup — which leaves the ref writing homeless, because `<Gauge>` renders
+ * *outside* `<Mainplate>` and cannot read `registerLive` from the face
+ * context. This renders null and does that one job from inside, so a
+ * scrolled-away gauge still lets go of its source.
+ *
+ * The mechanism is a hand's, exactly: a ref write outside React, and an
+ * unsubscribe while the face is offscreen. One style number per update, rather
+ * than a rebuilt polyline.
+ */
+function SweepFill({
+  node,
   source,
-  controlled,
-  animate,
-  unstyled,
+  min,
+  max,
 }: {
-  scale: Scale
-  redline: [number, number] | undefined
-  indicator: NonNullable<GaugeProps["indicator"]>
-  source: Source<number> | null
-  /** The controlled reading, or `null` when a `Source` owns it. */
-  controlled: number | null
-  /** Glide the fill to a new controlled reading. Never set on the live path. */
-  animate: boolean
-  unstyled: boolean
+  node: RefObject<SVGPathElement | null>
+  source: Source<number>
+  min: number
+  max: number
 }) {
-  const { outline, registerLive } = useFaceContext()
-  const box = frameBox({ outline, clip: false })
-  const width = indicator === "sweep" ? SWEEP_TRACK_WIDTH : NEEDLE_TRACK_WIDTH
-  const end = scale.startAngle + scale.sweepAngle
-  const arc = useCallback(
-    (from: number, to: number) =>
-      arcPath(outline, from, to, undefined, TRACK_INSET, "center", width),
-    [outline, width],
-  )
-
-  /**
-   * The reading as a dash offset over the fixed full-sweep path.
-   *
-   * **CSS cannot interpolate `d`.** Redrawing the arc per value is what a
-   * naive "animate the fill" reaches for, and it produces a hard cut every
-   * time. So the fill's path never changes: it is the whole sweep, declared
-   * `pathLength={SWEEP_UNITS}` so the dash pattern is expressed in hundredths
-   * of it whatever the outline's real length is, and the reading is how much
-   * of that pattern is scrolled into view — a plain number, which a transition
-   * *can* interpolate. Clamped, because a fill cannot overfill the way an
-   * over-range needle can legitimately pin past its stop.
-   */
-  const offsetFor = useCallback(
-    (v: number) => {
-      const span = scale.max - scale.min
-      const fraction = span === 0 ? 0 : (v - scale.min) / span
-      return quantize(SWEEP_UNITS * (1 - Math.min(Math.max(fraction, 0), 1)))
-    },
-    [scale],
-  )
-
-  // The live fill rides the same mechanism a hand's rotation does: a ref write
-  // outside React, and — through the face's own registry — an unsubscribe
-  // while the face is offscreen. In sweep mode this is the only live part on
-  // the face, so without it a scrolled-away gauge would keep its engine warm.
-  // One style number per update now, rather than a rebuilt polyline.
-  const fill = useRef<SVGPathElement | null>(null)
-  const subscribe = source === null ? null : source.subscribe
-  const get = source === null ? null : source.get
+  const { registerLive } = useFaceContext()
+  const { subscribe, get } = source
   useEffect(() => {
-    if (subscribe === null || get === null || indicator !== "sweep") return
     const bind = () => {
       const write = () => {
-        const node = fill.current
-        if (node === null) return
-        node.style.strokeDashoffset = String(offsetFor(get()))
+        const el = node.current
+        if (el === null) return
+        el.style.strokeDashoffset = String(sweepOffset(get(), min, max))
       }
       write()
       return subscribe(write)
@@ -228,59 +208,8 @@ function GaugeArcs({
       unregister()
       unbind()
     }
-  }, [subscribe, get, indicator, offsetFor, registerLive])
-
-  const stroke = (paint: string) => (unstyled ? undefined : paint)
-
-  return (
-    <svg
-      viewBox={`${quantize(box.x)} ${quantize(box.y)} ${quantize(box.width)} ${quantize(box.height)}`}
-      role="presentation"
-      style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible" }}
-      data-mp="arcs"
-    >
-      <path
-        d={arc(scale.startAngle, end)}
-        fill="none"
-        stroke={stroke("var(--mp-tick)")}
-        strokeWidth={width}
-        strokeLinecap="round"
-        data-mp="track"
-      />
-      {redline === undefined ? null : (
-        <path
-          d={arc(valueToAngle(redline[0], scale), valueToAngle(redline[1], scale))}
-          fill="none"
-          stroke={stroke("var(--mp-warning)")}
-          strokeWidth={width}
-          strokeLinecap="round"
-          data-mp="redline"
-        />
-      )}
-      {indicator !== "sweep" ? null : (
-        <path
-          // The path is the whole sweep and never moves; only the dash does.
-          d={arc(scale.startAngle, end)}
-          pathLength={SWEEP_UNITS}
-          strokeDasharray={SWEEP_UNITS}
-          style={{
-            // A live fill renders fully hidden and is written on mount: no
-            // reading of a `Source` reaches server HTML, here or anywhere.
-            strokeDashoffset: controlled === null ? SWEEP_UNITS : offsetFor(controlled),
-            // Armed for controlled values only. A per-frame ref write must
-            // never be chasing a 180ms transition it re-triggers every frame.
-            ...(animate ? { transition: `stroke-dashoffset ${STEP_EASE}` } : undefined),
-          }}
-          fill="none"
-          stroke={stroke("var(--mp-accent)")}
-          strokeWidth={width}
-          strokeLinecap="round"
-          ref={fill}
-          data-mp="sweep"
-        />
-      )}
-    </svg>
-  )
+  }, [subscribe, get, min, max, node, registerLive])
+  return null
 }
 
 /**
@@ -406,6 +335,9 @@ export function Gauge({
 
   const rootNode = useRef<HTMLDivElement | null>(null)
   const readoutNode = useRef<HTMLDivElement | null>(null)
+  // The sweep fill's element, handed to the arc that renders it and to the
+  // binder that writes its dash offset — one node, two collaborators.
+  const fillNode = useRef<SVGPathElement | null>(null)
   const subscribe = source === null ? null : source.subscribe
   const get = source === null ? null : source.get
 
@@ -435,20 +367,75 @@ export function Gauge({
 
   const slots: FaceSlot[] = []
   if (indicator === "hand") slots.push(partSlot("dial", <Dial />))
+
+  // The arc layer, as three `<Arc>`s: the composable part doing tier-1 work,
+  // with no path code left in this file. They are written HERE, as elements,
+  // rather than wrapped in a component of their own — the layer host lifts
+  // elements it can see, and a component boundary would hide them and cost
+  // the face a second `<svg>`.
+  const arcWidth = indicator === "sweep" ? SWEEP_TRACK_WIDTH : NEEDLE_TRACK_WIDTH
+  const band = {
+    min: domainMin,
+    max: domainMax,
+    startAngle: scale.startAngle,
+    sweepAngle: scale.sweepAngle,
+    inset: TRACK_INSET,
+    width: arcWidth,
+  }
+  // The gauge's flavor, gated by `unstyled` here rather than inside the part:
+  // the arc's own default is the tick ink, which is exactly what the track
+  // wants, and the other two say what they are.
+  const stroke = (paint: string) => (unstyled ? undefined : paint)
   slots.push({
     key: "arcs",
     wiring: {},
     claims: () => false,
     node: (
-      <GaugeArcs
-        scale={scale}
-        redline={redline}
-        indicator={indicator}
-        source={source}
-        controlled={controlled}
-        animate={animate}
-        unstyled={unstyled}
-      />
+      <>
+        <Arc key="track" from={domainMin} to={domainMax} {...band} data-mp="track" />
+        {redline === undefined ? null : (
+          <Arc
+            key="redline"
+            from={redline[0]}
+            to={redline[1]}
+            {...band}
+            stroke={stroke("var(--mp-warning)")}
+            data-mp="redline"
+          />
+        )}
+        {indicator !== "sweep" ? null : (
+          <Arc
+            key="sweep"
+            // The path is the whole sweep and never moves; only the dash does.
+            from={domainMin}
+            to={domainMax}
+            {...band}
+            stroke={stroke("var(--mp-accent)")}
+            pathLength={SWEEP_UNITS}
+            strokeDasharray={SWEEP_UNITS}
+            style={{
+              // A live fill renders fully hidden and is written on mount: no
+              // reading of a `Source` reaches server HTML, here or anywhere.
+              strokeDashoffset:
+                controlled === null ? SWEEP_UNITS : sweepOffset(controlled, domainMin, domainMax),
+              // Armed for controlled values only. A per-frame ref write must
+              // never be chasing a 180ms transition it re-triggers every frame.
+              ...(animate ? { transition: `stroke-dashoffset ${STEP_EASE}` } : undefined),
+            }}
+            ref={fillNode}
+            data-mp="sweep"
+          />
+        )}
+        {indicator !== "sweep" || source === null ? null : (
+          <SweepFill
+            key="sweep-live"
+            node={fillNode}
+            source={source}
+            min={domainMin}
+            max={domainMax}
+          />
+        )}
+      </>
     ),
   })
   if (indicator === "hand") {
@@ -538,5 +525,7 @@ Gauge.Dial = Dial
 Gauge.Ticks = Ticks
 Gauge.Hand = Hand
 Gauge.Cap = Cap
-// Not a slot — always a free child — but discovered the same way (spec §2).
+// Not slots — always free children — but discovered the same way (spec §2).
+// An `<Arc>` added here joins the gauge's own three on the one shared layer.
+Gauge.Arc = Arc
 Gauge.Complication = Complication

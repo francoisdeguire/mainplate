@@ -8,8 +8,10 @@
  * capability test, never a demo card.
  */
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
+import { createSource } from "@/mainplate/core"
 import {
+  Arc,
   Cap,
   Clock,
   Complication,
@@ -299,6 +301,32 @@ function RegisterClock() {
   )
 }
 
+/**
+ * The arc part, bare: a static track and a live elapsed ring on the SAME
+ * embedded `<svg>` — two `<Arc>`s, one layer, and the ring sweeps a full
+ * minute at zero React commits because `to` is a `Source`.
+ *
+ * The whole minute is ink; the elapsed part is the face's one red.
+ */
+function ElapsedRing() {
+  const [elapsed] = useState(() => createSource(0, { min: 0, max: 60 }))
+  useEffect(() => {
+    const start = performance.now()
+    let frame = requestAnimationFrame(function loop() {
+      elapsed.set(((performance.now() - start) / 1000) % 60)
+      frame = requestAnimationFrame(loop)
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [elapsed])
+  return (
+    <Mainplate label="One minute elapsed" className="w-56">
+      <Arc from={0} to={100} width={4} />
+      <Arc from={0} to={elapsed} width={4} stroke="var(--mp-accent)" />
+      <Ticks count={12} inset={18} length={5} width={1.4} />
+    </Mainplate>
+  )
+}
+
 /** The frozen 10:09:36 pose — the numeral row is judged on shape, not on time. */
 const POSE = new Date("2026-01-15T10:09:36Z")
 
@@ -433,6 +461,29 @@ export default function FacesLab() {
         <div className={CARD}>
           <ValuesTrack />
           <p className={NOTE}>{"values={[1, 2, 5, 10, 20, 50, 100]} — stated outright"}</p>
+        </div>
+      </div>
+
+      <h2 className={SECTION}>arcs — one shared svg layer per face</h2>
+      <div className="mt-4 flex flex-wrap items-center gap-8">
+        <div className={CARD}>
+          <ElapsedRing />
+          <p className={NOTE}>{"two <Arc>s, one <svg> — the ring's `to` is a Source"}</p>
+        </div>
+        <div className={CARD}>
+          <Gauge value={72} max={220} redline={[180, 220]} label="Speed" className="w-56">
+            <Arc
+              from={140}
+              to={150}
+              max={220}
+              startAngle={-135}
+              sweepAngle={270}
+              inset={3}
+              width={2.5}
+              stroke="var(--mp-ink)"
+            />
+          </Gauge>
+          <p className={NOTE}>an added arc joins the gauge's own three on that layer</p>
         </div>
       </div>
 

@@ -49,6 +49,7 @@ import {
   resolveAt,
   resolveOutline,
 } from "../core"
+import { hoistArcs } from "./arc"
 import { anchorPercent } from "./geometry"
 import { FaceContext, type FaceContextValue, useFaceContext } from "./mainplate"
 
@@ -180,7 +181,9 @@ export function Complication({
       {...rest}
       data-mp="complication"
     >
-      <FaceContext.Provider value={nested}>{children}</FaceContext.Provider>
+      {/* A fresh context is a fresh arc layer: a register's arcs belong to the
+          register's own outline and box, never to the face it sits on. */}
+      <FaceContext.Provider value={nested}>{hoistArcs(children)}</FaceContext.Provider>
     </div>
   )
 }
