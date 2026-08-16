@@ -385,6 +385,26 @@ describe("<Hand> — mapping and presets", () => {
       // through 354°. The unwrapped write keeps going forward.
       expect(rotationOf(hand)).toBe(360)
     })
+
+    it("unwraps CONTROLLED values too: a re-rendered 59 → 0 steps +6°, no backspin", () => {
+      // The Task 4 case: <Clock time={...}> hands are controlled numbers.
+      // A value change rebuilds the binder, and without a persistent
+      // accumulator the fresh binder writes the absolute 0 — which the armed
+      // transition animates 354 → 0 the long way back.
+      function Face({ s }: { s: number }) {
+        return (
+          <Mainplate label="x">
+            <Hand value={s} type="second" tick />
+          </Mainplate>
+        )
+      }
+      const { container, rerender } = render(<Face s={59} />)
+      const hand = handsOf(container)[0]
+      if (hand === undefined) throw new Error("no hand")
+      expect(rotationOf(hand)).toBe(354)
+      rerender(<Face s={0} />)
+      expect(rotationOf(hand)).toBe(360)
+    })
   })
 })
 
@@ -401,6 +421,13 @@ describe("unstyled — full structure, zero default paint", () => {
     )
     for (const part of container.querySelectorAll<HTMLElement>("[data-mp]")) {
       expect(part.style.background).toBe("")
+    }
+    // borderRadius is paint too: a design system squaring its marks must not
+    // fight a leftover 999px.
+    for (const selector of ['[data-mp="dial"]', '[data-mp="tick"]', '[data-mp="hand"]']) {
+      const part = container.querySelector<HTMLElement>(selector)
+      if (part === null) throw new Error(`missing ${selector}`)
+      expect(part.style.borderRadius).toBe("")
     }
     // Structure survives: the hand still rotates.
     const hand = handsOf(container)[0]
@@ -537,6 +564,55 @@ describe("observe auto-attach — offscreen pausing without wiring", () => {
     expect(rafQueue.size).toBe(0)
     io.trigger(true)
     expect(rafQueue.size).toBe(1)
+  })
+
+  it("resumes where the hand paused — never a backspin through the laps", () => {
+    // A ticking hand accumulates: values 15→30→45→0 are +90° each. Twelve
+    // steps park the accumulator at 1080°. If resume rebound from scratch,
+    // the first write would be the absolute 0° — and the armed 180ms
+    // transition would animate 1080 → 0, three full laps backwards at speed.
+    const { source, set } = countingSource(0, { min: 0, max: 60 })
+    const { container } = render(
+      <Mainplate label="x">
+        <Hand value={source} type="second" tick />
+      </Mainplate>,
+    )
+    const hand = handsOf(container)[0]
+    if (hand === undefined) throw new Error("no hand")
+    for (let lap = 0; lap < 3; lap++) {
+      for (const v of [15, 30, 45, 0]) set(v)
+    }
+    const parked = rotationOf(hand)
+    expect(parked).toBe(1080)
+
+    const io = FakeIntersectionObserver.instances[0]
+    if (io === undefined) throw new Error("no observer was constructed")
+    io.trigger(false)
+    io.trigger(true)
+    const resumed = rotationOf(hand)
+    expect(Math.abs(resumed - parked)).toBeLessThanOrEqual(180)
+    expect(resumed).toBe(1080) // same value, same pose, zero movement
+  })
+
+  it("unmounting while offscreen leaks neither observer nor subscription", () => {
+    const { source, subscriptions } = countingSource(0, { min: 0, max: 60 })
+    const { unmount } = render(
+      <Mainplate label="x">
+        <Hand value={source} />
+      </Mainplate>,
+    )
+    const io = FakeIntersectionObserver.instances[0]
+    if (io === undefined) throw new Error("no observer was constructed")
+    io.trigger(false)
+    expect(subscriptions()).toBe(0) // paused: already released
+    unmount()
+    // Nothing to double-release, nothing left behind: the observer is dead
+    // and the subscription count never went negative or dangling.
+    expect(subscriptions()).toBe(0)
+    expect(io.disconnected).toBe(true)
+    // A stale trigger on the dead observer resurrects nothing.
+    io.trigger(true)
+    expect(subscriptions()).toBe(0)
   })
 
   it("unmount tears the observer down and the subscription with it", () => {

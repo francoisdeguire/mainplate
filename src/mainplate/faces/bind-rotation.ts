@@ -11,8 +11,10 @@
  * `unwrap` is the Plan 3 wrap finding resolved at the layer that owns the
  * problem. A stepping hand animates each move with a CSS transition, and a
  * transition given an absolute 354° → 0° write spins the long way back. When
- * unwrapping, every write is accumulated monotonically instead: the element's
- * rotation only ever grows, and the seam crossing becomes an ordinary +6°.
+ * unwrapping, every write moves the element **by the shortest signed path**
+ * from wherever it is: the seam crossing becomes an ordinary +6°, a decreasing
+ * reading swings back the short way, and a value oscillating across the seam
+ * stays local instead of ratcheting the element upward forever.
  */
 import { quantize } from "../core"
 
@@ -20,10 +22,19 @@ export type BindRotationOptions = {
   /** The static half of the transform, preserved verbatim in every write. */
   translate: string
   /**
-   * Accumulate rotation monotonically across the 360° seam — for elements
-   * whose writes a CSS transition animates. @default false
+   * Accumulate each write by the shortest signed path — every delta is
+   * normalised into (−180°, 180°] and added to the last written angle — for
+   * elements whose writes a CSS transition animates. @default false
    */
   unwrap?: boolean
+  /**
+   * The accumulator, shared across binders. A caller that rebinds the same
+   * element (pause/resume, a controlled value change) passes one cell for the
+   * element's whole life; otherwise a fresh binder would write an absolute
+   * angle into an element still wearing — and transitioning from — the
+   * accumulated one, laps backwards at full speed. @default a private cell
+   */
+  state?: { last: number | null }
 }
 
 /**
@@ -36,21 +47,21 @@ export function bindRotation(
   el: ElementCSSInlineStyle,
   read: () => number,
   subscribe: ((cb: () => void) => () => void) | null,
-  { translate, unwrap = false }: BindRotationOptions,
+  { translate, unwrap = false, state }: BindRotationOptions,
 ): () => void {
-  let last: number | null = null
+  const acc = state ?? { last: null }
 
   const write = () => {
     let angle = read()
-    if (unwrap && last !== null) {
-      // The forward distance from where the element is to where the value
-      // points, in [0, 360). Backwards never happens on the clocks that step
-      // — so a near-full lap is the same position wobbling in its last float
-      // bits, and unwrapping it would spin the element 360° for nothing.
-      const forward = (((angle - last) % 360) + 360) % 360
-      angle = forward > 359 ? last : last + forward
+    if (unwrap && acc.last !== null) {
+      // The signed distance from where the element is to where the value
+      // points, normalised into (−180°, 180°] — the short way, either way.
+      let delta = (angle - acc.last) % 360
+      if (delta > 180) delta -= 360
+      else if (delta <= -180) delta += 360
+      angle = acc.last + delta
     }
-    last = angle
+    acc.last = angle
     el.style.transform = `${translate} rotate(${quantize(angle)}deg)`
   }
 

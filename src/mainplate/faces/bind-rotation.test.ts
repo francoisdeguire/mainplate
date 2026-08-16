@@ -39,7 +39,7 @@ describe("bindRotation", () => {
   })
 
   describe("the wrap regression (Plan 3 final-review finding)", () => {
-    it("unwraps across the seam: 350 -> 4 writes a monotonic 364, never 4", () => {
+    it("unwraps across the seam: 350 -> 4 writes 364 (the +14 short path), never 4", () => {
       const el = document.createElement("div")
       const src = createSource(350)
       bindRotation(el, src.get, src.subscribe, { translate: TRANSLATE, unwrap: true })
@@ -52,7 +52,7 @@ describe("bindRotation", () => {
       expect(written).toBe(364)
     })
 
-    it("keeps accumulating across several laps, strictly monotonic", () => {
+    it("oscillation stays local: each delta takes the shortest signed path", () => {
       const el = document.createElement("div")
       const src = createSource(350)
       bindRotation(el, src.get, src.subscribe, { translate: TRANSLATE, unwrap: true })
@@ -61,7 +61,20 @@ describe("bindRotation", () => {
         src.set(angle)
         writes.push(rotationOf(el))
       }
-      expect(writes).toEqual([350, 364, 710, 724])
+      // 350→4 is +14; 4→350 is −14 back, not +346 onward. A value that
+      // wobbles across the seam must not ratchet the element upward forever.
+      expect(writes).toEqual([350, 364, 350, 364])
+    })
+
+    it("a decreasing reading takes the short way: 90 → 60 writes 60, never 420", () => {
+      const el = document.createElement("div")
+      const src = createSource(90)
+      bindRotation(el, src.get, src.subscribe, { translate: TRANSLATE, unwrap: true })
+      expect(rotationOf(el)).toBe(90)
+      src.set(60)
+      // Forward-only accumulation would send a −30° change the long way
+      // round (+330° → 420) — a gauge easing off would lap its own dial.
+      expect(rotationOf(el)).toBe(60)
     })
 
     it("without unwrap, writes the absolute angle: 350 -> 4 writes 4", () => {
@@ -84,11 +97,37 @@ describe("bindRotation", () => {
       }
       bindRotation(el, () => angle, subscribe, { translate: TRANSLATE, unwrap: true })
       expect(rotationOf(el)).toBe(90)
-      // A hair backwards is the same position wobbling in the last float
-      // bits — unwrapping it as a forward lap would spin the hand 360.
+      // A hair backwards is a hair backwards — the shortest signed path —
+      // never a near-full forward lap. Quantisation writes it as 90.
       angle = 89.99999
       listener.notify?.()
       expect(rotationOf(el)).toBe(90)
+      // …and the accumulator carries on normally from there.
+      angle = 100
+      listener.notify?.()
+      expect(rotationOf(el)).toBe(100)
+    })
+
+    it("a shared state cell seeds the accumulator across rebinds", () => {
+      // The Hand owns one cell for its whole life: pause/resume and
+      // controlled-value rebinds construct fresh binders, and without the
+      // seed each one would write an absolute angle into an element still
+      // wearing (and transitioning from) the accumulated one.
+      const el = document.createElement("div")
+      const state: { last: number | null } = { last: null }
+      const src = createSource(350)
+      const unbind = bindRotation(el, src.get, src.subscribe, {
+        translate: TRANSLATE,
+        unwrap: true,
+        state,
+      })
+      src.set(4) // 364 accumulated
+      unbind()
+      // A fresh binder over the same cell continues where the last left off.
+      bindRotation(el, src.get, src.subscribe, { translate: TRANSLATE, unwrap: true, state })
+      expect(rotationOf(el)).toBe(364)
+      src.set(10)
+      expect(rotationOf(el)).toBe(370)
     })
   })
 

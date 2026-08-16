@@ -1,12 +1,14 @@
 @import "tailwindcss";
 
+/* The lab wears the design direction it judges by: near-black ink on
+   off-white, neutral throughout — the only accent anywhere is the faces'
+   own warm red, which is theirs, not the shell's. */
 @theme {
-  --color-ink: oklch(0.92 0.01 95);
-  --color-surface: oklch(0.17 0.005 285);
+  --color-ink: oklch(0.21 0.006 285);
+  --color-surface: oklch(0.975 0.002 285);
 
   /* Added for the temporary /lab exploration pages. Remove with them. */
-  --color-dim: oklch(0.6 0.008 285);
-  --color-line: oklch(0.29 0.006 285);
-  --color-plate: oklch(0.21 0.006 285);
-  --color-accent: oklch(0.8 0.13 78);
+  --color-dim: oklch(0.45 0.008 285);
+  --color-line: oklch(0.87 0.004 285);
+  --color-plate: oklch(0.94 0.003 285);
 }

@@ -72,11 +72,15 @@ export function Dial({ className, style, children, ...rest }: DialProps) {
         width: `${cq(box.width, boxW)}cqw`,
         height: `${cq(box.height, boxW)}cqw`,
         transform: "translate(-50%, -50%)",
-        // A round dial is a border-radius; the rect dial's corner radius is
-        // pinned properly by the shape task — until then this is the spike's
-        // eyeballed constant, good for the default rect only.
-        borderRadius: box.width === box.height ? "50%" : `${cq(24, boxW)}cqw`,
-        ...(unstyled ? undefined : { background: "var(--mp-dial)" }),
+        ...(unstyled
+          ? undefined
+          : {
+              // A round dial is a border-radius; the rect dial's corner radius
+              // is pinned properly by the shape task — until then this is the
+              // spike's eyeballed constant, good for the default rect only.
+              borderRadius: box.width === box.height ? "50%" : `${cq(24, boxW)}cqw`,
+              background: "var(--mp-dial)",
+            }),
         ...style,
       }}
       {...rest}
@@ -126,8 +130,7 @@ export function Ticks({ variant = "all", className, style, ...rest }: TicksProps
         className={className}
         style={{
           ...markStyle(t),
-          borderRadius: 999,
-          ...(unstyled ? undefined : { background: "var(--mp-tick-major)" }),
+          ...(unstyled ? undefined : { borderRadius: 999, background: "var(--mp-tick-major)" }),
           ...style,
         }}
         {...rest}
@@ -151,8 +154,7 @@ export function Ticks({ variant = "all", className, style, ...rest }: TicksProps
           className={className}
           style={{
             ...markStyle(t),
-            borderRadius: 999,
-            ...(unstyled ? undefined : { background: "var(--mp-tick)" }),
+            ...(unstyled ? undefined : { borderRadius: 999, background: "var(--mp-tick)" }),
             ...style,
           }}
           {...rest}
@@ -213,7 +215,8 @@ export type HandProps = {
   /**
    * Step once per value with the 180ms transition — which is exactly the case
    * where an absolute 354°→0° write spins backwards, so tick mode also turns
-   * on the binder's monotonic unwrapping. @default false
+   * on the binder's unwrapping: every step moves by the shortest signed path
+   * (59s→0s is +6°; a decreasing reading swings back the short way). @default false
    */
   tick?: boolean
   className?: string
@@ -277,22 +280,31 @@ export function Hand({
     [ref],
   )
 
+  // ONE accumulator for the hand's whole life. Rebinds happen — a controlled
+  // value change re-runs the effect, pause/resume constructs fresh binders —
+  // and each fresh binder must continue from the rotation the element is
+  // already wearing, or its first write is an absolute angle the armed
+  // transition animates backwards through every accumulated lap.
+  const accumulator = useRef<{ last: number | null }>({ last: null })
+
   useEffect(() => {
     const node = el.current
     if (node === null) return
+    const options = { translate, unwrap: tick, state: accumulator.current }
     if (subscribe === null) {
       // Controlled: one write per value change, no liveness to manage.
-      return bindRotation(node, read, null, { translate, unwrap: tick })
+      return bindRotation(node, read, null, options)
     }
     // Live: bind, and register so the face can pause this hand offscreen.
     // Pausing IS unbinding — the unsubscribe rides the source's own refcount
     // down to the engine — and resuming rebinds, whose initial write resyncs
-    // to the value as of now rather than replaying the backlog.
-    let unbind = bindRotation(node, read, subscribe, { translate, unwrap: tick })
+    // to the value as of now (seeded, so within ±180°) rather than replaying
+    // the backlog.
+    let unbind = bindRotation(node, read, subscribe, options)
     const unregister = registerLive({
       pause: () => unbind(),
       resume: () => {
-        unbind = bindRotation(node, read, subscribe, { translate, unwrap: tick })
+        unbind = bindRotation(node, read, subscribe, options)
       },
     })
     return () => {

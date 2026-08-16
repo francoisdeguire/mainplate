@@ -67,7 +67,7 @@ function NeedleFace() {
   )
 }
 
-const CARD = "rounded-3xl border border-zinc-200 bg-zinc-50 p-8 text-zinc-900 shadow-sm"
+const CARD = "rounded-3xl border border-zinc-200 bg-white p-8 text-zinc-900 shadow-sm"
 
 export default function FacesLab() {
   return (
@@ -85,19 +85,19 @@ export default function FacesLab() {
       <div className="mt-4 flex flex-wrap items-center gap-8">
         <div className={CARD}>
           <SweepFace />
-          <p className="mt-4 text-center text-xs text-zinc-400">sweep</p>
+          <p className="mt-4 text-center text-xs text-zinc-600">sweep</p>
         </div>
         <div className={CARD}>
           <TickFace />
-          <p className="mt-4 text-center text-xs text-zinc-400">tick — watch :59 → :00</p>
+          <p className="mt-4 text-center text-xs text-zinc-600">tick — watch :59 → :00</p>
         </div>
         <div className={CARD}>
           <QuartersFace />
-          <p className="mt-4 text-center text-xs text-zinc-400">quarters</p>
+          <p className="mt-4 text-center text-xs text-zinc-600">quarters</p>
         </div>
         <div className={CARD}>
           <NeedleFace />
-          <p className="mt-4 text-center text-xs text-zinc-400">controlled, 270° sweep</p>
+          <p className="mt-4 text-center text-xs text-zinc-600">controlled, 270° sweep</p>
         </div>
       </div>
     </main>
