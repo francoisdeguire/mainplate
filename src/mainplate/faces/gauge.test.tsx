@@ -27,6 +27,12 @@ function needleOf(container: HTMLElement): HTMLElement {
   return hand
 }
 
+function sweepOf(container: HTMLElement): SVGPathElement {
+  const fill = container.querySelector<SVGPathElement>('[data-mp="sweep"]')
+  if (fill === null) throw new Error("no sweep fill rendered")
+  return fill
+}
+
 /** A controllable `prefers-reduced-motion` list, as the ticker's tests build one. */
 function stubReducedMotion(matches: boolean) {
   const mql = {
@@ -108,6 +114,14 @@ describe("<Gauge> — meter semantics", () => {
   it("clamps aria-valuenow under the bottom of the range", () => {
     const { getByRole } = render(<Gauge value={-20} min={0} max={100} />)
     expect(getByRole("meter").getAttribute("aria-valuenow")).toBe("0")
+  })
+
+  it("keeps role=meter even when a caller passes their own role", () => {
+    // The root spread is how `id`, `data-*` and handlers reach the div, and it
+    // must not be a way to demote a reading back to a picture.
+    const { getByRole } = render(<Gauge value={50} role="img" label="Speed" />)
+    const root = getByRole("meter")
+    expect(root.getAttribute("aria-valuenow")).toBe("50")
   })
 
   it("clamps the live ref path too", () => {
@@ -209,16 +223,60 @@ describe("<Gauge> — the arc layer", () => {
         <Gauge value={src} indicator="sweep" />
       </Profiler>,
     )
-    const fill = container.querySelector('[data-mp="sweep"]')
-    if (fill === null) throw new Error("no sweep fill")
-    // An empty sweep draws nothing at all; the first write arrives on mount.
-    expect(fill.getAttribute("d")).toBe("")
+    const fill = sweepOf(container)
+    // The path is fixed — the full sweep, always — and the reading is the
+    // length of it that is dashed in. An empty sweep hides the whole thing.
+    expect(fill.getAttribute("d")).toMatch(/^M /)
+    expect(fill.style.strokeDashoffset).toBe("100")
     act(() => {
       src.set(50)
     })
-    const drawn = fill.getAttribute("d") ?? ""
-    expect(drawn).toMatch(/^M /)
+    expect(fill.style.strokeDashoffset).toBe("50")
+    act(() => {
+      src.set(75)
+    })
+    expect(fill.style.strokeDashoffset).toBe("25")
     expect(onRender).toHaveBeenCalledTimes(1)
+  })
+
+  it("clamps the fill at both ends of the domain", () => {
+    const { container: over } = render(<Gauge value={150} max={100} indicator="sweep" />)
+    expect(sweepOf(over).style.strokeDashoffset).toBe("0")
+    const { container: under } = render(<Gauge value={-40} max={100} indicator="sweep" />)
+    expect(sweepOf(under).style.strokeDashoffset).toBe("100")
+  })
+})
+
+describe("<Gauge> — the controlled sweep fill glides too", () => {
+  it("arms a transition on the dash offset and moves it to the new value", () => {
+    const { container, rerender } = render(<Gauge value={20} indicator="sweep" />)
+    const fill = sweepOf(container)
+    // A `d` change cannot be interpolated by CSS, so the reading rides the
+    // dash offset over a fixed path — which can be.
+    expect(fill.style.transition).toMatch(/stroke-dashoffset \d+ms/)
+    expect(fill.style.strokeDashoffset).toBe("80")
+    const before = fill.getAttribute("d")
+
+    rerender(<Gauge value={80} indicator="sweep" />)
+    expect(fill.style.strokeDashoffset).toBe("20")
+    // The same node, and the same path: nothing about the geometry moved, so
+    // there is a transition for the browser to run.
+    expect(sweepOf(container)).toBe(fill)
+    expect(fill.getAttribute("d")).toBe(before)
+  })
+
+  it("falls back to instant under prefers-reduced-motion", () => {
+    stubReducedMotion(true)
+    const { container } = render(<Gauge value={20} indicator="sweep" />)
+    expect(sweepOf(container).style.transition).toBe("")
+    expect(sweepOf(container).style.strokeDashoffset).toBe("80")
+  })
+
+  it("arms nothing on the live path — a Source drives its own motion", () => {
+    const src = createSource(20, { min: 0, max: 100 })
+    const { container } = render(<Gauge value={src} indicator="sweep" />)
+    // A per-frame ref write must not be fighting a 180ms transition.
+    expect(sweepOf(container).style.transition).toBe("")
   })
 })
 

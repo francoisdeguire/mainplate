@@ -112,8 +112,11 @@ describe("<Gauge> on the server", () => {
     src.set(90)
     expect(renderToString(face())).toBe(first)
     expect(handStyles(first)).toHaveLength(0)
-    // The sweep fill is the gauge's own live path: rendered empty, written on
-    // mount. The readout beside it is empty for the same reason.
-    expect(first).toContain('d=""')
+    // The sweep fill's path is fixed and value-free; the reading is the dash
+    // offset over it, and the server serves the fully-hidden one — 90 of 100
+    // would be a live value baked into HTML. Written on mount instead, like
+    // the meter's value and the readout's text.
+    expect(first).toContain("stroke-dashoffset:100")
+    expect(first).not.toContain("stroke-dashoffset:10;")
   })
 })

@@ -32,12 +32,20 @@ import {
 } from "../core"
 import { Face, type FaceSlot, handSlot, partSlot, usePrefersReducedMotion } from "./face"
 import { useFaceContext } from "./mainplate"
-import { Cap, Dial, Hand } from "./parts"
+import { Cap, Dial, Hand, STEP_EASE } from "./parts"
 
 /** The arc layer's geometry, in dial units. Private: sizing is CSS. */
 const TRACK_INSET = 10
 const NEEDLE_TRACK_WIDTH = 3
 const SWEEP_TRACK_WIDTH = 11
+
+/**
+ * The dash scale the sweep fill is expressed in. `pathLength` re-declares a
+ * path's length as this many units, so the fill's offset is hundredths of the
+ * sweep on any outline — no `getTotalLength()`, and therefore no DOM read on
+ * a path that has to render identically on the server.
+ */
+const SWEEP_UNITS = 100
 
 export type GaugeProps = {
   /** The reading. A number is controlled; a `Source` is live (zero renders per update). */
@@ -120,6 +128,7 @@ function GaugeArcs({
   indicator,
   source,
   controlled,
+  animate,
   unstyled,
 }: {
   scale: Scale
@@ -128,6 +137,8 @@ function GaugeArcs({
   source: Source<number> | null
   /** The controlled reading, or `null` when a `Source` owns it. */
   controlled: number | null
+  /** Glide the fill to a new controlled reading. Never set on the live path. */
+  animate: boolean
   unstyled: boolean
 }) {
   const { outline, registerLive } = useFaceContext()
@@ -140,10 +151,32 @@ function GaugeArcs({
     [outline, width],
   )
 
+  /**
+   * The reading as a dash offset over the fixed full-sweep path.
+   *
+   * **CSS cannot interpolate `d`.** Redrawing the arc per value is what a
+   * naive "animate the fill" reaches for, and it produces a hard cut every
+   * time. So the fill's path never changes: it is the whole sweep, declared
+   * `pathLength={SWEEP_UNITS}` so the dash pattern is expressed in hundredths
+   * of it whatever the outline's real length is, and the reading is how much
+   * of that pattern is scrolled into view — a plain number, which a transition
+   * *can* interpolate. Clamped, because a fill cannot overfill the way an
+   * over-range needle can legitimately pin past its stop.
+   */
+  const offsetFor = useCallback(
+    (v: number) => {
+      const span = scale.max - scale.min
+      const fraction = span === 0 ? 0 : (v - scale.min) / span
+      return quantize(SWEEP_UNITS * (1 - Math.min(Math.max(fraction, 0), 1)))
+    },
+    [scale],
+  )
+
   // The live fill rides the same mechanism a hand's rotation does: a ref write
   // outside React, and — through the face's own registry — an unsubscribe
   // while the face is offscreen. In sweep mode this is the only live part on
   // the face, so without it a scrolled-away gauge would keep its engine warm.
+  // One style number per update now, rather than a rebuilt polyline.
   const fill = useRef<SVGPathElement | null>(null)
   const subscribe = source === null ? null : source.subscribe
   const get = source === null ? null : source.get
@@ -153,7 +186,7 @@ function GaugeArcs({
       const write = () => {
         const node = fill.current
         if (node === null) return
-        node.setAttribute("d", arc(scale.startAngle, valueToAngle(get(), scale)))
+        node.style.strokeDashoffset = String(offsetFor(get()))
       }
       write()
       return subscribe(write)
@@ -169,7 +202,7 @@ function GaugeArcs({
       unregister()
       unbind()
     }
-  }, [subscribe, get, indicator, arc, scale, registerLive])
+  }, [subscribe, get, indicator, offsetFor, registerLive])
 
   const stroke = (paint: string) => (unstyled ? undefined : paint)
 
@@ -200,9 +233,18 @@ function GaugeArcs({
       )}
       {indicator !== "sweep" ? null : (
         <path
-          // A live fill renders empty and is written on mount: no reading of a
-          // `Source` ever reaches server HTML, here or anywhere else.
-          d={controlled === null ? "" : arc(scale.startAngle, valueToAngle(controlled, scale))}
+          // The path is the whole sweep and never moves; only the dash does.
+          d={arc(scale.startAngle, end)}
+          pathLength={SWEEP_UNITS}
+          strokeDasharray={SWEEP_UNITS}
+          style={{
+            // A live fill renders fully hidden and is written on mount: no
+            // reading of a `Source` reaches server HTML, here or anywhere.
+            strokeDashoffset: controlled === null ? SWEEP_UNITS : offsetFor(controlled),
+            // Armed for controlled values only. A per-frame ref write must
+            // never be chasing a 180ms transition it re-triggers every frame.
+            ...(animate ? { transition: `stroke-dashoffset ${STEP_EASE}` } : undefined),
+          }}
           fill="none"
           stroke={stroke("var(--mp-accent)")}
           strokeWidth={width}
@@ -343,6 +385,7 @@ export function Gauge({
         indicator={indicator}
         source={source}
         controlled={controlled}
+        animate={animate}
         unstyled={unstyled}
       />
     ),
@@ -392,6 +435,10 @@ export function Gauge({
       slots={slots}
       label={label}
       unstyled={unstyled}
+      {...root}
+      // After the spread, exactly as `<Mainplate>` re-affirms its own role and
+      // label: the root spread is how `id`, `data-*` and handlers reach the
+      // div, and it must not be a way to demote a reading back to a picture.
       role="meter"
       aria-valuemin={quantize(domainMin)}
       aria-valuemax={quantize(domainMax)}
@@ -402,7 +449,6 @@ export function Gauge({
       {...(controlled === null
         ? null
         : { "aria-valuenow": meterValue(controlled, domainMin, domainMax, step) })}
-      {...root}
       ref={rootNode}
     >
       {children}

@@ -275,6 +275,24 @@ describe("<Clock> — slots replace appearance, never the reading", () => {
     expect(dial?.className).toBe("d")
   })
 
+  it("a slot wrapped in a Fragment still claims its slot", () => {
+    // Fragments are what `{condition && <Hand …/>}` groups and what a
+    // consumer's own wrapper component returns. `Children.toArray` flattens
+    // arrays but NOT fragments, so composition has to open them itself or a
+    // slot silently becomes a second hand.
+    const { container } = render(
+      <Clock timezone="UTC">
+        <>
+          <Hand type="second" className="x" />
+        </>
+      </Clock>,
+    )
+    const hands = handsOf(container)
+    expect(hands).toHaveLength(3)
+    expect(hands.map((h) => h.className)).toEqual(["", "", "x"])
+    expect(hands.map(rotationOf)).toEqual([105, 180, 0])
+  })
+
   it("children that claim no slot are simply added on top", () => {
     const { container, getByTestId } = render(
       <Clock timezone="UTC">

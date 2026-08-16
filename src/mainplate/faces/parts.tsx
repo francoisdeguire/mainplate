@@ -209,8 +209,15 @@ const LONG_REACH: Record<HandType | "plain", number> = {
   plain: 80,
 }
 
-/** The stepping cadence's ease: fast out, soft landing — a quartz escapement. */
-const TICK_TRANSITION = "transform 180ms cubic-bezier(0.23, 1, 0.32, 1)"
+/**
+ * The stepping cadence's ease: fast out, soft landing — a quartz escapement.
+ * Exported without a property so a face's other moving parts — the gauge's
+ * sweep fill, which glides on `stroke-dashoffset` rather than on a transform —
+ * step to the same duration and curve without restating either.
+ */
+export const STEP_EASE = "180ms cubic-bezier(0.23, 1, 0.32, 1)"
+
+const TICK_TRANSITION = `transform ${STEP_EASE}`
 
 export type HandProps = {
   /**

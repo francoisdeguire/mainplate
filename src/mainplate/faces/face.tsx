@@ -25,6 +25,7 @@
 import {
   Children,
   cloneElement,
+  Fragment,
   isValidElement,
   type ReactElement,
   type ReactNode,
@@ -106,6 +107,31 @@ export function partSlot(key: string, node: ReactElement): FaceSlot {
 }
 
 /**
+ * Children with fragments opened, depth-first.
+ *
+ * `Children.toArray` flattens nested *arrays* but leaves a `<>…</>` intact as
+ * one opaque element — and a fragment is what `{flag && <Hand/>}` groups, what
+ * a `.map` over slots produces, and what a consumer's own wrapper component
+ * returns. Left unopened, a slot inside one claims nothing and renders as a
+ * second hand beside the default it meant to replace. Keys are prefixed by the
+ * fragment's own key on the way down, so two fragments cannot both contribute
+ * a `.0`.
+ */
+function flatten(children: ReactNode, prefix: string, out: ReactNode[]): void {
+  for (const kid of Children.toArray(children)) {
+    if (!isValidElement<{ children?: ReactNode }>(kid)) {
+      out.push(kid)
+      continue
+    }
+    if (kid.type === Fragment) {
+      flatten(kid.props.children, `${prefix}${String(kid.key)}/`, out)
+      continue
+    }
+    out.push(cloneElement(kid, { key: `${prefix}${String(kid.key)}` }))
+  }
+}
+
+/**
  * Slots in their canonical order, each either the default part or the child
  * that claimed it, followed by every child that claimed nothing.
  *
@@ -115,7 +141,8 @@ export function partSlot(key: string, node: ReactElement): FaceSlot {
  * Free children come last, on top, which is where added content belongs.
  */
 function composeSlots(slots: FaceSlot[], children: ReactNode): ReactNode[] {
-  const kids = Children.toArray(children)
+  const kids: ReactNode[] = []
+  flatten(children, "", kids)
   const claimed = new Map<string, ReactNode>()
   const extras: ReactNode[] = []
 
