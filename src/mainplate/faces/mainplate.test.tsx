@@ -609,6 +609,247 @@ describe("<Hand> — mapping and presets", () => {
   })
 })
 
+describe("multiple hands — one face, a domain each", () => {
+  /**
+   * The stress this task exists for: a hand's domain is per-instance state, not
+   * a face-wide setting. Every test here renders TWO OR MORE hands and asserts
+   * they disagree — because the defect being guarded against (a domain resolved
+   * once and shared, whether module-scoped or cached on the context) makes the
+   * FIRST hand look perfect and every hand after it silently wrong.
+   */
+  it("two hands map the same reading through their own max", () => {
+    const { container } = render(
+      <Mainplate label="x">
+        <Hand value={15} max={30} />
+        <Hand value={15} max={60} />
+        <Hand value={15} min={10} max={40} />
+      </Mainplate>,
+    )
+    const [half, full, offset] = handsOf(container)
+    if (half === undefined || full === undefined || offset === undefined) {
+      throw new Error("missing hands")
+    }
+    expect(rotationOf(half)).toBe(180) // 15 of 0-30
+    expect(rotationOf(full)).toBe(90) // 15 of 0-60
+    expect(rotationOf(offset)).toBe(60) // 5 of a 30-wide domain starting at 10
+  })
+
+  it("§8.10 per hand: one hand's prop override never reaches its sibling", () => {
+    const src = createSource(25, { min: 0, max: 100 })
+    const { container } = render(
+      <Mainplate label="x">
+        {/* The override comes FIRST on purpose: a shared domain would be seeded
+            by this hand and inherited by every hand below it. */}
+        <Hand value={src} max={50} />
+        <Hand value={src} />
+        <Hand value={src} min={-100} />
+        <Hand value={src} type="hour" />
+      </Mainplate>,
+    )
+    const [prop, domain, halfPropped, typed] = handsOf(container)
+    if (
+      prop === undefined ||
+      domain === undefined ||
+      halfPropped === undefined ||
+      typed === undefined
+    ) {
+      throw new Error("missing hands")
+    }
+    expect(rotationOf(prop)).toBe(180) // prop max 50 beats the source's 100
+    expect(rotationOf(domain)).toBe(90) // …and the sibling still reads 0-100
+    expect(rotationOf(halfPropped)).toBe(225) // prop min, source max: 125 of 200
+    // The type preset is the weakest of the three: an hour hand handed a source
+    // that declares 0-100 maps through the source, not through 12.
+    expect(rotationOf(typed)).toBe(90)
+  })
+
+  it("startAngle and sweepAngle are per hand too", () => {
+    const src = createSource(50, { min: 0, max: 100 })
+    const { container } = render(
+      <Mainplate label="x">
+        <Hand value={src} startAngle={-135} sweepAngle={270} />
+        <Hand value={src} />
+        <Hand value={src} startAngle={90} />
+      </Mainplate>,
+    )
+    expect(handsOf(container).map(rotationOf)).toEqual([0, 180, 270])
+  })
+
+  it("type presets do not bleed between hands", () => {
+    const { container } = render(
+      <Mainplate label="x">
+        <Hand value={3} type="hour" />
+        <Hand value={3} type="minute" />
+        <Hand value={3} type="second" />
+        <Hand value={3} />
+      </Mainplate>,
+    )
+    // 3 of 12 is a quarter turn; 3 of 60 is 18°, three times over.
+    expect(handsOf(container).map(rotationOf)).toEqual([90, 18, 18, 18])
+  })
+
+  it("two hour hands, two zones: each maps its own source's domain", () => {
+    // The GMT case in miniature — the 24-hour hand is an hour hand whose source
+    // declares 0-24, and it must not drag the 12-hour hand beside it onto the
+    // same scale (nor be dragged onto the preset's 12).
+    const local = createSource(3, { min: 0, max: 12 })
+    const home = createSource(3, { min: 0, max: 24 })
+    const { container } = render(
+      <Mainplate label="x">
+        <Hand value={local} type="hour" />
+        <Hand value={home} type="hour" variant="line" long />
+      </Mainplate>,
+    )
+    const [twelve, twentyFour] = handsOf(container)
+    if (twelve === undefined || twentyFour === undefined) throw new Error("missing hands")
+    expect(rotationOf(twelve)).toBe(90)
+    expect(rotationOf(twentyFour)).toBe(45)
+    // …and they are still two independent live hands afterwards.
+    local.set(6)
+    expect(rotationOf(twelve)).toBe(180)
+    expect(rotationOf(twentyFour)).toBe(45)
+  })
+
+  it("four live hands from three engines move while the tree commits exactly once", () => {
+    const onRender = vi.fn()
+    const elapsed = createSource(0, { min: 0, max: 100 })
+    function Face() {
+      const utc = useWatchSource({ timezone: "UTC" })
+      const tokyo = useWatchSource({ timezone: "Asia/Tokyo" })
+      return (
+        <Mainplate label="Dual time">
+          <Dial />
+          <Ticks />
+          <Hand value={utc.hour} type="hour" />
+          <Hand value={tokyo.hour} type="hour" variant="line" long />
+          <Hand value={utc.minute} type="minute" />
+          <Hand value={utc.second} type="second" />
+          <Hand value={elapsed} startAngle={-135} sweepAngle={270} />
+          <Cap />
+        </Mainplate>
+      )
+    }
+    const { container, unmount } = render(
+      <Profiler id="dual" onRender={onRender}>
+        <Face />
+      </Profiler>,
+    )
+    const rotations = () => handsOf(container).map(rotationOf)
+
+    // 03:30:00 UTC is 12:30 in Tokyo: the two hour hands sit 90° apart, each
+    // through its own zone, and nothing on the face restates a domain.
+    expect(rotations()).toEqual([105, 15, 180, 0, -135])
+    expect(onRender).toHaveBeenCalledTimes(1)
+    // Two zones, one engine: the ticker is a module singleton and both
+    // `useWatchSource`s ride it, so five live hands arm a single rAF.
+    expect(raf).toHaveBeenCalledTimes(1)
+
+    fireFrame(1000)
+    fireFrame(2000)
+    fireFrame(4000)
+    const after = rotations()
+    expect(after[3]).toBe(42) // 7s on the seconds hand
+    // Both hour hands advanced by the same real time from different origins —
+    // still 90° apart, still not the same number.
+    const utcHour = after[0]
+    const tokyoHour = after[1]
+    if (utcHour === undefined || tokyoHour === undefined) throw new Error("missing hour hands")
+    expect(utcHour).toBeGreaterThan(105)
+    expect(tokyoHour).toBeGreaterThan(15)
+    expect(utcHour - tokyoHour).toBeCloseTo(90, 10)
+
+    // The non-clock source moves on its own schedule, through its own 270°
+    // sweep, and commits nothing either.
+    elapsed.set(50)
+    const gauge = handsOf(container)[4]
+    if (gauge === undefined) throw new Error("no gauge hand")
+    expect(rotationOf(gauge)).toBe(0)
+    expect(onRender).toHaveBeenCalledTimes(1)
+
+    unmount()
+    expect(rafQueue.size).toBe(0)
+  })
+})
+
+describe("multiple hands — offscreen pausing with N of them", () => {
+  beforeEach(() => {
+    FakeIntersectionObserver.instances = []
+    vi.stubGlobal("IntersectionObserver", FakeIntersectionObserver)
+  })
+
+  it("pauses and resumes every hand, each keeping its own accumulator", () => {
+    const a = countingSource(0, { min: 0, max: 60 })
+    const b = countingSource(0, { min: 0, max: 60 })
+    const c = countingSource(0, { min: 0, max: 100 })
+    const { container } = render(
+      <Mainplate label="x">
+        <Hand value={a.source} type="second" tick />
+        <Hand value={b.source} type="second" tick />
+        <Hand value={c.source} />
+      </Mainplate>,
+    )
+    const [handA, handB, handC] = handsOf(container)
+    if (handA === undefined || handB === undefined || handC === undefined) {
+      throw new Error("missing hands")
+    }
+    const subscriptions = () => [a.subscriptions(), b.subscriptions(), c.subscriptions()]
+    expect(subscriptions()).toEqual([1, 1, 1])
+
+    // Three laps on A, one on B — deliberately different accumulator depths.
+    for (let lap = 0; lap < 3; lap++) for (const v of [15, 30, 45, 0]) a.set(v)
+    for (const v of [15, 30, 45, 0]) b.set(v)
+    expect([rotationOf(handA), rotationOf(handB)]).toEqual([1080, 360])
+
+    const io = FakeIntersectionObserver.instances[0]
+    if (io === undefined) throw new Error("no observer was constructed")
+    io.trigger(false)
+    // ALL of them released — one registry, N registrations.
+    expect(subscriptions()).toEqual([0, 0, 0])
+    a.set(30)
+    c.set(50)
+    expect(rotationOf(handA)).toBe(1080)
+    expect(rotationOf(handC)).toBe(0)
+
+    io.trigger(true)
+    expect(subscriptions()).toEqual([1, 1, 1])
+    // Each resumed from ITS OWN parked pose: A resyncs to 30 the short way from
+    // 1080 (+180), B never moved and stays on its single lap, C is a plain hand
+    // writing the absolute angle. One shared accumulator collapses all three.
+    expect([rotationOf(handA), rotationOf(handB), rotationOf(handC)]).toEqual([1260, 360, 180])
+  })
+
+  it("releases both zones' engines offscreen and resyncs both on return", () => {
+    function Face() {
+      const utc = useWatchSource({ timezone: "UTC" })
+      const tokyo = useWatchSource({ timezone: "Asia/Tokyo" })
+      return (
+        <Mainplate label="Dual time">
+          <Hand value={utc.hour} type="hour" />
+          <Hand value={tokyo.hour} type="hour" />
+          <Hand value={utc.second} type="second" />
+        </Mainplate>
+      )
+    }
+    const { container } = render(<Face />)
+    expect(rafQueue.size).toBe(1)
+    const io = FakeIntersectionObserver.instances[0]
+    if (io === undefined) throw new Error("no observer was constructed")
+
+    io.trigger(false)
+    // Every hand's unsubscribe rode its own zone's refcount down; nothing is
+    // scheduled for either engine.
+    expect(rafQueue.size).toBe(0)
+    fireFrame(60_000)
+    expect(handsOf(container).map(rotationOf)).toEqual([105, 15, 0])
+
+    io.trigger(true)
+    expect(rafQueue.size).toBe(1)
+    // Resync is elapsed real time, per zone, per hand: a minute passed while
+    // the face was dark and both hour hands know it.
+    expect(handsOf(container).map(rotationOf)).toEqual([105.5, 15.5, 0])
+  })
+})
+
 describe("unstyled — full structure, zero default paint", () => {
   it("renders every part unpainted; geometry stays", () => {
     const src = createSource(15, { min: 0, max: 60 })
@@ -857,6 +1098,9 @@ describe("quantisation — every inline style value parses to ≤4dp", () => {
     vi.setSystemTime(T_CAD) // 03:30:36.400 — raw angles are long floats
     function Face() {
       const clock = useWatchSource({ timezone: "UTC" })
+      // A half-hour zone on a 24-hour domain: every angle it produces is a
+      // repeating decimal, arriving through `source.domain` rather than a prop.
+      const kolkata = useWatchSource({ timezone: "Asia/Kolkata" })
       return (
         <Mainplate label="Live" shape={{ ratio: 0.82, radius: 30 }}>
           <Dial />
@@ -870,6 +1114,10 @@ describe("quantisation — every inline style value parses to ≤4dp", () => {
           <Hand value={clock.minute} type="minute" />
           <Hand value={clock.second} type="second" />
           <Hand value={10 / 3} />
+          {/* Two more domains on the same face: a 24-hour hand and a 270°
+              sweep over a 7-wide domain — neither angle is a round number. */}
+          <Hand value={kolkata.hour24} type="hour" variant="line" long />
+          <Hand value={10 / 3} min={0} max={7} startAngle={-135} sweepAngle={270} />
           <Cap />
         </Mainplate>
       )

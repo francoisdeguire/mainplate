@@ -61,6 +61,91 @@ function SliderGauge() {
   )
 }
 
+/**
+ * Dual time: two hour hands on one face, a zone each.
+ *
+ * Two `useWatchSource` calls give two independent sets of sources; each `<Hand>`
+ * carries its own domain, so nothing on the face restates a `max`. The second
+ * zone's hand is distinguished by **weight and reach, never by a second colour**
+ * — `variant="line"` thins it to a hairline and `long` sends it past the local
+ * hour hand's tip. Ink and the one warm red, as everywhere else.
+ */
+function DualTimeFace() {
+  const local = useWatchSource()
+  const zurich = useWatchSource({ timezone: "Europe/Zurich" })
+  return (
+    <Mainplate label="Dual time: local and Zurich" className="w-56">
+      <Dial />
+      <Ticks />
+      <Numerals variant="quarters" />
+      {/* Under the local hands: DOM order is z-order. */}
+      <Hand value={zurich.hour} type="hour" variant="line" long />
+      <Hand value={local.hour} type="hour" />
+      <Hand value={local.minute} type="minute" />
+      <Hand value={local.second} type="second" />
+      <Cap />
+    </Mainplate>
+  )
+}
+
+/**
+ * The same idea with a real GMT hand: `hour24`'s own domain is 0–24, so one
+ * revolution is a day — and the hand states no `min`/`max` at all, because
+ * `source.domain` beats the `type="hour"` preset (§8.10). The open-ring tip is
+ * `children` artwork: the box keeps pivot and rotation, the children own the look.
+ */
+function GmtFace() {
+  const local = useWatchSource()
+  const tokyo = useWatchSource({ timezone: "Asia/Tokyo" })
+  return (
+    <Mainplate label="GMT: local, with Tokyo on a 24-hour hand" className="w-56">
+      <Dial />
+      <Ticks />
+      <Numerals variant="quarters" />
+      <Hand value={tokyo.hour24} type="hour" long>
+        <div className="absolute inset-0 flex flex-col items-center">
+          <div
+            className="rounded-full"
+            style={{
+              width: "2.9cqw",
+              height: "2.9cqw",
+              border: "0.55cqw solid var(--mp-ink)",
+              boxSizing: "border-box",
+              flex: "none",
+            }}
+          />
+          <div
+            style={{
+              width: "0.7cqw",
+              flex: 1,
+              marginTop: "-0.3cqw",
+              background: "var(--mp-ink)",
+            }}
+          />
+        </div>
+      </Hand>
+      <Hand value={local.hour} type="hour" />
+      <Hand value={local.minute} type="minute" />
+      <Hand value={local.second} type="second" />
+      <Cap />
+    </Mainplate>
+  )
+}
+
+/** One reading, three domains — the whole claim of this section, held still. */
+function DomainTrio() {
+  return (
+    <Mainplate label="One reading through three domains" className="w-56">
+      <Dial />
+      <Ticks variant="quarters" />
+      <Hand value={5} max={60} />
+      <Hand value={5} max={30} variant="line" long />
+      <Hand value={5} type="hour" />
+      <Cap />
+    </Mainplate>
+  )
+}
+
 /** The frozen 10:09:36 pose — the numeral row is judged on shape, not on time. */
 const POSE = new Date("2026-01-15T10:09:36Z")
 
@@ -153,6 +238,22 @@ export default function FacesLab() {
         <div className={CARD}>
           <Clock time={POSE} timezone="UTC" numerals="quarters" className="w-56" />
           <p className={NOTE}>{'numerals="quarters" — 12/3/6/9'}</p>
+        </div>
+      </div>
+
+      <h2 className={SECTION}>multiple hands — a domain each</h2>
+      <div className="mt-4 flex flex-wrap items-center gap-8">
+        <div className={CARD}>
+          <DualTimeFace />
+          <p className={NOTE}>two hour hands, two zones — the hairline is Zurich</p>
+        </div>
+        <div className={CARD}>
+          <GmtFace />
+          <p className={NOTE}>{"Tokyo on a 24-hour hand: hour24's own domain, zero props"}</p>
+        </div>
+        <div className={CARD}>
+          <DomainTrio />
+          <p className={NOTE}>{"value 5 through 0-60, 0-30 and 0-12 → 30°, 60°, 150°"}</p>
         </div>
       </div>
 

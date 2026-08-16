@@ -79,6 +79,44 @@ describe("<Clock> on the server", () => {
   })
 })
 
+describe("a multi-hand face on the server", () => {
+  it("keeps every hand's reading out of the markup, whatever its domain", async () => {
+    const { Mainplate } = await import("./mainplate")
+    const { Cap, Dial, Hand, Ticks } = await import("./parts")
+    const { useWatchSource } = await import("../time/use-watch-source")
+    const elapsed = createSource(0, { min: 0, max: 100 })
+    // Five hands, four domains, three engines — the dual-time composition the
+    // lab renders. The claim scales: no hand emits a rotation, so two renders
+    // are byte-identical however many domains the face carries.
+    function DualTime() {
+      const utc = useWatchSource({ timezone: "UTC" })
+      const tokyo = useWatchSource({ timezone: "Asia/Tokyo" })
+      return (
+        <Mainplate label="Dual time">
+          <Dial />
+          <Ticks />
+          <Hand value={utc.hour} type="hour" />
+          <Hand value={tokyo.hour} type="hour" variant="line" long />
+          <Hand value={utc.minute} type="minute" />
+          <Hand value={utc.second} type="second" />
+          <Hand value={elapsed} startAngle={-135} sweepAngle={270} />
+          <Cap />
+        </Mainplate>
+      )
+    }
+    const first = renderToString(<DualTime />)
+    elapsed.set(90)
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    expect(renderToString(<DualTime />)).toBe(first)
+    const hands = handStyles(first)
+    expect(hands).toHaveLength(5)
+    for (const style of hands) {
+      expect(style).toContain("translate(-50%")
+      expect(style).not.toContain("rotate(")
+    }
+  })
+})
+
 describe("<Gauge> on the server", () => {
   it("renders a controlled meter completely: role, bounds, value, readout", async () => {
     const { Gauge } = await import("./gauge")
