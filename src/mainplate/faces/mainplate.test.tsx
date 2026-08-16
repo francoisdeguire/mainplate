@@ -7,7 +7,7 @@ import { createSource, type Source } from "../core/source"
 import { getTicker } from "../time/ticker"
 import { useWatchSource } from "../time/use-watch-source"
 import { Mainplate } from "./mainplate"
-import { Cap, Dial, Hand, Ticks } from "./parts"
+import { Cap, Dial, Hand, Numerals, Ticks } from "./parts"
 
 /** 2026-01-15 03:30:00.000 UTC — hour 105°, minute 180°, second 0°. */
 const T_0330 = Date.UTC(2026, 0, 15, 3, 30, 0)
@@ -102,6 +102,10 @@ function rotationOf(el: Element): number {
 
 function handsOf(container: HTMLElement): HTMLElement[] {
   return [...container.querySelectorAll<HTMLElement>('[data-mp="hand"]')]
+}
+
+function numeralsOf(container: HTMLElement): HTMLElement[] {
+  return [...container.querySelectorAll<HTMLElement>('[data-mp="numeral"]')]
 }
 
 /**
@@ -245,6 +249,203 @@ describe("<Ticks> — minimal", () => {
     const minors = marks.filter((m) => m.style.background === "var(--mp-tick)")
     expect(majors).toHaveLength(12)
     expect(minors).toHaveLength(48)
+  })
+})
+
+describe("<Numerals> — the numeral track, with orientation", () => {
+  /**
+   * Rotation wrapped into [0, 360). `radial` reports its placement angle
+   * verbatim, but `tangential` is derived from the outward normal through
+   * `atan2`, so 270° legitimately comes back as the visually identical −90.
+   */
+  function turnOf(el: Element): number {
+    return ((rotationOf(el) % 360) + 360) % 360
+  }
+
+  it("renders twelve numerals on the hour angles, the 12 at the top", () => {
+    const { container } = render(
+      <Mainplate label="x">
+        <Numerals />
+      </Mainplate>,
+    )
+    const marks = numeralsOf(container)
+    expect(marks).toHaveLength(12)
+    expect(marks.map((m) => m.textContent)).toEqual([
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9",
+      "10",
+      "11",
+      "12",
+    ])
+    // Angular placement, the same query the hour majors use: the 12 sits on
+    // the 0° ray and the 3 on the 90° ray, both at the numeral track's radius
+    // (100 − inset 22 = 78).
+    const twelve = marks[11]
+    const three = marks[2]
+    if (twelve === undefined || three === undefined) throw new Error("missing numerals")
+    expect({ left: twelve.style.left, top: twelve.style.top }).toEqual(
+      dialPercent(polar(0, 78), { clip: false }),
+    )
+    expect({ left: three.style.left, top: three.style.top }).toEqual(
+      dialPercent(polar(90, 78), { clip: false }),
+    )
+  })
+
+  it("is upright by default: no numeral ever turns", () => {
+    const { container } = render(
+      <Mainplate label="x">
+        <Numerals />
+      </Mainplate>,
+    )
+    expect(numeralsOf(container).map(rotationOf)).toEqual(Array(12).fill(0))
+  })
+
+  it("orient='radial' turns each numeral to its own angle", () => {
+    const { container } = render(
+      <Mainplate label="x">
+        <Numerals orient="radial" />
+      </Mainplate>,
+    )
+    // 1 → 30°, … 11 → 330°, 12 → 0°: the numeral's own axis lies along the ray
+    // it sits on, which is the classic wrapped-around-the-dial look.
+    expect(numeralsOf(container).map(rotationOf)).toEqual([
+      30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330, 0,
+    ])
+  })
+
+  it("orient='tangential' turns each numeral a quarter turn past its angle", () => {
+    const { container } = render(
+      <Mainplate label="x">
+        <Numerals orient="tangential" />
+      </Mainplate>,
+    )
+    // The shared `tangent` vocabulary: edge + 90, i.e. the numeral's own axis
+    // follows the tangent in the direction of travel (clockwise). On a circle
+    // that is exactly angle + 90.
+    expect(numeralsOf(container).map(turnOf)).toEqual([
+      120, 150, 180, 210, 240, 270, 300, 330, 0, 30, 60, 90,
+    ])
+  })
+
+  it("roman uses IIII, the watchmaker's four", () => {
+    const { container } = render(
+      <Mainplate label="x">
+        <Numerals variant="roman" />
+      </Mainplate>,
+    )
+    const labels = numeralsOf(container).map((m) => m.textContent)
+    expect(labels[3]).toBe("IIII")
+    expect(labels).not.toContain("IV")
+    expect(labels).toEqual([
+      "I",
+      "II",
+      "III",
+      "IIII",
+      "V",
+      "VI",
+      "VII",
+      "VIII",
+      "IX",
+      "X",
+      "XI",
+      "XII",
+    ])
+  })
+
+  it("quarters keeps 12/3/6/9 only", () => {
+    const { container } = render(
+      <Mainplate label="x">
+        <Numerals variant="quarters" />
+      </Mainplate>,
+    )
+    const marks = numeralsOf(container)
+    expect(marks.map((m) => m.textContent)).toEqual(["3", "6", "9", "12"])
+    expect(marks.map((m) => m.style.top)).toEqual(
+      [90, 180, 270, 0].map((a) => dialPercent(polar(a, 78), { clip: false }).top),
+    )
+  })
+
+  it("render replaces each numeral's content and keeps the engine's placement", () => {
+    const { container: plain } = render(
+      <Mainplate label="x">
+        <Numerals variant="roman" />
+      </Mainplate>,
+    )
+    const { container } = render(
+      <Mainplate label="x">
+        <Numerals variant="roman" render={(value, { label }) => <b>{`${label}·${value}`}</b>} />
+      </Mainplate>,
+    )
+    const marks = numeralsOf(container)
+    expect(marks.map((m) => m.textContent)).toEqual([
+      "I·1",
+      "II·2",
+      "III·3",
+      "IIII·4",
+      "V·5",
+      "VI·6",
+      "VII·7",
+      "VIII·8",
+      "IX·9",
+      "X·10",
+      "XI·11",
+      "XII·12",
+    ])
+    expect(marks.every((m) => m.querySelector("b") !== null)).toBe(true)
+    // Position and rotation stay the engine's — `render` owns the content and
+    // nothing else, exactly as `<Ticks render>` will.
+    expect(marks.map((m) => m.style.top)).toEqual(
+      numeralsOf(plain).map((m: HTMLElement) => m.style.top),
+    )
+  })
+
+  it("inset moves the whole track, keeping the angles", () => {
+    const { container } = render(
+      <Mainplate label="x">
+        <Numerals inset={34} />
+      </Mainplate>,
+    )
+    const twelve = numeralsOf(container)[11]
+    if (twelve === undefined) throw new Error("no 12")
+    expect(twelve.style.top).toBe(dialPercent(polar(0, 66), { clip: false }).top)
+  })
+
+  it("unstyled strips the paint and keeps the placement", () => {
+    const { container } = render(
+      <Mainplate label="x" unstyled>
+        <Numerals orient="radial" />
+      </Mainplate>,
+    )
+    const marks = numeralsOf(container)
+    expect(marks).toHaveLength(12)
+    for (const mark of marks) {
+      expect(mark.style.color).toBe("")
+      expect(mark.style.fontSize).toBe("")
+      expect(mark.style.fontWeight).toBe("")
+    }
+    // Structure survives: the track is still placed and still turned.
+    const three = marks[2]
+    if (three === undefined) throw new Error("no 3")
+    expect(three.style.left).toBe(dialPercent(polar(90, 78), { clip: false }).left)
+    expect(rotationOf(three)).toBe(90)
+  })
+
+  it("takes a className and spreads HTML attributes onto every numeral", () => {
+    const { container } = render(
+      <Mainplate label="x">
+        <Numerals className="n" data-track="hours" />
+      </Mainplate>,
+    )
+    const marks = numeralsOf(container)
+    expect(marks.every((m) => m.className === "n")).toBe(true)
+    expect(marks.every((m) => m.getAttribute("data-track") === "hours")).toBe(true)
   })
 })
 
@@ -660,6 +861,11 @@ describe("quantisation — every inline style value parses to ≤4dp", () => {
         <Mainplate label="Live" shape={{ ratio: 0.82, radius: 30 }}>
           <Dial />
           <Ticks />
+          {/* Both derived orientations, on the shape whose normals are not the
+              ray: `tangential` reaches the style through `atan2`, which is
+              exactly where an unquantised float would get in. */}
+          <Numerals variant="roman" orient="tangential" />
+          <Numerals variant="quarters" orient="radial" inset={40} />
           <Hand value={clock.hour} type="hour" />
           <Hand value={clock.minute} type="minute" />
           <Hand value={clock.second} type="second" />

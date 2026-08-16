@@ -9,7 +9,7 @@
  */
 
 import { useState } from "react"
-import { Cap, Clock, Dial, Gauge, Hand, Mainplate, Ticks } from "@/mainplate/faces"
+import { Cap, Clock, Dial, Gauge, Hand, Mainplate, Numerals, Ticks } from "@/mainplate/faces"
 import { useWatchSource } from "@/mainplate/time"
 import { LabNav, ScratchNotice } from "../nav"
 
@@ -60,6 +60,9 @@ function SliderGauge() {
     </div>
   )
 }
+
+/** The frozen 10:09:36 pose — the numeral row is judged on shape, not on time. */
+const POSE = new Date("2026-01-15T10:09:36Z")
 
 const CARD = "rounded-3xl border border-zinc-200 bg-white p-8 text-zinc-900 shadow-sm"
 const NOTE = "mt-4 text-center text-xs text-zinc-600"
@@ -126,6 +129,30 @@ export default function FacesLab() {
             <Hand type="second" variant="line" className="opacity-70" />
           </Clock>
           <p className={NOTE}>slot: the seconds hand, restyled</p>
+        </div>
+      </div>
+
+      <h2 className={SECTION}>numerals — one word turns the track</h2>
+      <div className="mt-4 flex flex-wrap items-center gap-8">
+        <div className={CARD}>
+          <Clock time={POSE} timezone="UTC" ticks="quarters" className="w-56" />
+          <p className={NOTE}>{'orient="upright" — the default'}</p>
+        </div>
+        <div className={CARD}>
+          <Clock time={POSE} timezone="UTC" ticks="quarters" className="w-56">
+            <Numerals orient="tangential" />
+          </Clock>
+          <p className={NOTE}>{'orient="tangential" — the axis on the tangent'}</p>
+        </div>
+        <div className={CARD}>
+          <Clock time={POSE} timezone="UTC" numerals="roman" ticks="quarters" className="w-56">
+            <Numerals variant="roman" orient="radial" />
+          </Clock>
+          <p className={NOTE}>{'roman, orient="radial" — IIII, wrapped'}</p>
+        </div>
+        <div className={CARD}>
+          <Clock time={POSE} timezone="UTC" numerals="quarters" className="w-56" />
+          <p className={NOTE}>{'numerals="quarters" — 12/3/6/9'}</p>
         </div>
       </div>
 

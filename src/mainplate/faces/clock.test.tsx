@@ -4,7 +4,7 @@ import { Profiler } from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { getTicker } from "../time/ticker"
 import { Clock } from "./clock"
-import { Cap, Dial, Hand, Ticks } from "./parts"
+import { Cap, Dial, Hand, Numerals, Ticks } from "./parts"
 
 /** 2026-01-15 03:30:00.000 UTC — hour 105°, minute 180°, second 0° in UTC. */
 const T_0330 = Date.UTC(2026, 0, 15, 3, 30, 0)
@@ -64,6 +64,10 @@ function rotationOf(el: Element): number {
 
 function handsOf(container: HTMLElement): HTMLElement[] {
   return [...container.querySelectorAll<HTMLElement>('[data-mp="hand"]')]
+}
+
+function numeralsOf(container: HTMLElement): HTMLElement[] {
+  return [...container.querySelectorAll<HTMLElement>('[data-mp="numeral"]')]
 }
 
 describe("<Clock> — the zero-props face", () => {
@@ -205,7 +209,37 @@ describe("<Clock> — time and timezone", () => {
   })
 })
 
-describe("<Clock> — numerals, the reach preset", () => {
+describe("<Clock> — numerals, the track and the reach preset", () => {
+  it("renders the arabic track by default, upright", () => {
+    const { container } = render(<Clock timezone="UTC" />)
+    const marks = numeralsOf(container)
+    expect(marks).toHaveLength(12)
+    expect(marks.map((m) => m.textContent)).toEqual([
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9",
+      "10",
+      "11",
+      "12",
+    ])
+    expect(marks.map(rotationOf)).toEqual(Array(12).fill(0))
+  })
+
+  it("numerals decides existence: 'roman' relabels the track, 'none' removes it", () => {
+    const { container: roman } = render(<Clock timezone="UTC" numerals="roman" />)
+    expect(numeralsOf(roman).map((m) => m.textContent)[3]).toBe("IIII")
+    const { container: quarters } = render(<Clock timezone="UTC" numerals="quarters" />)
+    expect(numeralsOf(quarters).map((m) => m.textContent)).toEqual(["3", "6", "9", "12"])
+    const { container: bare } = render(<Clock timezone="UTC" numerals="none" />)
+    expect(numeralsOf(bare)).toHaveLength(0)
+  })
+
   it("numerals='none' lets the hands reach further (spec §12)", () => {
     const { container: withNumerals } = render(<Clock timezone="UTC" />)
     const { container: without } = render(<Clock timezone="UTC" numerals="none" />)
@@ -273,6 +307,24 @@ describe("<Clock> — slots replace appearance, never the reading", () => {
     expect(ticks.every((t) => t.className === "t")).toBe(true)
     const dial = container.querySelector<HTMLElement>('[data-mp="dial"]')
     expect(dial?.className).toBe("d")
+  })
+
+  it("a Numerals child replaces the track and leaves ticks and hands default", () => {
+    const { container } = render(
+      <Clock timezone="UTC">
+        <Numerals variant="roman" orient="radial" className="n" />
+      </Clock>,
+    )
+    const marks = numeralsOf(container)
+    expect(marks).toHaveLength(12)
+    expect(marks.every((m) => m.className === "n")).toBe(true)
+    expect(marks.map((m) => m.textContent)[3]).toBe("IIII")
+    expect(marks.map(rotationOf)).toEqual([30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330, 0])
+    // Everything else stays the clock's: the full minute track, three live
+    // hands on the clock's own reading, one cap.
+    expect(container.querySelectorAll('[data-mp="tick"]')).toHaveLength(60)
+    expect(container.querySelectorAll('[data-mp="cap"]')).toHaveLength(1)
+    expect(handsOf(container).map(rotationOf)).toEqual([105, 180, 0])
   })
 
   it("a slot wrapped in a Fragment still claims its slot", () => {

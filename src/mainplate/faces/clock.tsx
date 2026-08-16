@@ -20,7 +20,7 @@ import { useWatchSource } from "../time"
 import { createWallClock, fieldValue } from "../time/wall-clock"
 import { Face, type FaceSlot, handSlot, partSlot } from "./face"
 import type { FaceShape } from "./mainplate"
-import { Cap, Dial, Hand, Ticks } from "./parts"
+import { Cap, Dial, Hand, Numerals, type NumeralVariant, Ticks } from "./parts"
 
 /** What the three hands read — numbers when frozen, `Source`s when live. */
 type Readings = {
@@ -39,12 +39,12 @@ export type ClockProps = {
   /** `"sweep"` glides, `"tick"` steps once per second, `"none"` omits the hand. @default "sweep" */
   second?: "sweep" | "tick" | "none"
   /**
-   * The numeral track. **The `<Numerals>` part itself lands in the numerals
-   * task**; today this prop selects the hand-reach preset it implies — a face
-   * with no numerals gives the ring back to the hands (spec §12) — and is
-   * otherwise inert. @default "arabic"
+   * The numeral track: 1–12, the same in roman IIII form, 3/6/9/12, or none at
+   * all. It also selects the hand-reach preset it implies — a face with no
+   * numerals gives the ring back to the hands (spec §12). Orientation is the
+   * slot's: `<Clock><Numerals orient="radial"/></Clock>`. @default "arabic"
    */
-  numerals?: "arabic" | "roman" | "quarters" | "none"
+  numerals?: NumeralVariant | "none"
   /** `"all"` is the minute track with hour majors; `"quarters"` keeps 12/3/6/9. @default "all" */
   ticks?: "all" | "quarters" | "none"
   /** Face shape. Circle-only rendering until the shape task; passed through today. @default "circle" */
@@ -79,6 +79,7 @@ function ClockFace({
 
   const slots: FaceSlot[] = [partSlot("dial", <Dial />)]
   if (ticks !== "none") slots.push(partSlot("ticks", <Ticks variant={ticks} />))
+  if (numerals !== "none") slots.push(partSlot("numerals", <Numerals variant={numerals} />))
   slots.push(
     handSlot("hand:hour", { value: readings.hour, type: "hour", long }, undefined, "hour"),
     handSlot("hand:minute", { value: readings.minute, type: "minute", long }, undefined, "minute"),
@@ -178,5 +179,6 @@ export function Clock({
 /** The slots, namespaced for discovery: `<Clock.Hand type="second" …/>`. */
 Clock.Dial = Dial
 Clock.Ticks = Ticks
+Clock.Numerals = Numerals
 Clock.Hand = Hand
 Clock.Cap = Cap

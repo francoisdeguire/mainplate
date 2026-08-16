@@ -1,7 +1,8 @@
 "use client"
 
 /**
- * The shared face parts: `<Hand>`, `<Cap>`, `<Dial>`, and a minimal `<Ticks>`.
+ * The shared face parts: `<Hand>`, `<Cap>`, `<Dial>`, `<Numerals>`, and a
+ * minimal `<Ticks>`.
  * May import: core, faces/*. One set for every face — flavor lives in the
  * `<Clock>`/`<Gauge>` wrappers, never in part duplicates.
  *
@@ -26,7 +27,7 @@ import {
 } from "react"
 import { isSource, quantize, type Source, valueToAngle } from "../core"
 import { bindRotation } from "./bind-rotation"
-import { type MarkTransform, markTransform } from "./geometry"
+import { type MarkTransform, markTransform, type Orient } from "./geometry"
 import { useFaceContext } from "./mainplate"
 
 /** Dial units → cqw (percent of the container's inline size), quantised. */
@@ -165,6 +166,167 @@ export function Ticks({ variant = "all", className, style, ...rest }: TicksProps
   }
 
   return <>{marks}</>
+}
+
+/* --------------------------------------------------------------- Numerals */
+
+export type NumeralVariant = "arabic" | "roman" | "quarters"
+
+/**
+ * How a numeral sits on its ray, in the words the owner asked for — `vertical`
+ * being what `upright` is called outside horology.
+ *
+ * The three map onto Task 2's shared `Orient` vocabulary and nothing else: this
+ * part writes no trig, and `radial` comes free from the same table. What each
+ * one turns is the numeral's **own axis** — the direction its top points —
+ * because that is what `Orient` means for every mark on the face:
+ *
+ * - `upright` — the axis never turns. Rotation is 0 at every position, so every
+ *   numeral reads horizontally. The default, and what a Mondaine wears.
+ * - `radial` — the axis lies along the ray, so the 3 turns a quarter turn
+ *   clockwise and the 6 stands on its head. Because a glyph's baseline is
+ *   square to its own axis, this is the layout whose *text* follows the
+ *   tangent: the classic wrapped-around-the-dial numeral.
+ * - `tangential` — the axis follows the tangent in the direction of travel
+ *   (clockwise), which is `edge + 90` in the shared table and exactly
+ *   `angle + 90` on a circle. The glyph then reads along the ray, pointing in
+ *   at the centre. A deliberate, decorative look — see the numerals task's
+ *   report for why the two names read backwards to a typographer.
+ */
+export type NumeralOrient = "upright" | "tangential" | "radial"
+
+/** The part's vocabulary → the geometry module's. The whole of the mapping. */
+const ORIENT: Record<NumeralOrient, Orient> = {
+  upright: "upright",
+  tangential: "tangent",
+  radial: "radial",
+}
+
+/**
+ * Four as IIII, not IV — the watchmaker's four. Every dial that has ever hung
+ * in a station or a jeweller's window uses it: it balances VIII across the
+ * face, and the subtractive IV is a printer's convention a dial never adopted.
+ */
+const ROMAN = ["I", "II", "III", "IIII", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"]
+
+/** The numeral track's geometry, in dial units. Private: sizing is CSS. */
+const NUMERAL_INSET = 22
+const NUMERAL_WIDTH = 26
+const NUMERAL_HEIGHT = 16
+const NUMERAL_SIZE = 12
+
+const HOURS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+const QUARTERS = [3, 6, 9, 12]
+
+export type NumeralsProps = {
+  /** `"arabic"` is 1–12, `"roman"` the same in IIII form, `"quarters"` keeps 3/6/9/12. @default "arabic" */
+  variant?: NumeralVariant
+  /** @default "upright" */
+  orient?: NumeralOrient
+  /**
+   * Distance inward from the outline to the numeral box's centre, in dial
+   * units. The default clears the minute track's inner ends with room to
+   * spare; a face with its own tick geometry moves the ring rather than
+   * measuring glyphs. @default 22
+   */
+  inset?: number
+  className?: string
+  /**
+   * Replaces each numeral's content. Position, size and rotation stay the
+   * engine's — the same division of labour `<Ticks render>` gets — so a custom
+   * numeral cannot fall off its ray. The label comes along because `roman` is
+   * the part's own spelling, not something a caller can re-derive from `value`.
+   */
+  render?: (value: number, numeral: { label: string; angle: number }) => ReactNode
+} & Omit<ComponentProps<"div">, "children" | "className">
+
+/**
+ * The numeral track: hour labels on the hour rays, turned — or not — by one
+ * word from the shared orientation vocabulary.
+ *
+ * Placement is angular, never by perimeter length: III belongs under the 3
+ * o'clock ray, which is where the hour hand points, and on a shaped face that
+ * is emphatically not where an evenly-spaced perimeter walk lands.
+ *
+ * **Clearance is a fixed inset, not a measured one** — the numerals task's
+ * browser pass decided it. The default ring's ink clears the minute track's
+ * inner ends by ~5 dial units at 12/3/6/9 and by ~3 at the widest diagonal
+ * label there is (roman VIII at 8 o'clock, on the full 60-mark track): tight,
+ * never touching. Measuring rendered glyph boxes — the legacy SVG layer's
+ * `clearanceRadius` — would even that gap out, at the cost of a post-mount
+ * layout read on a part whose whole claim is that it renders once and never
+ * again. Buy that back only when a real face collides; moving `inset` is the
+ * answer until then.
+ */
+export function Numerals({
+  variant = "arabic",
+  orient = "upright",
+  inset = NUMERAL_INSET,
+  className,
+  style,
+  render,
+  ...rest
+}: NumeralsProps) {
+  const { outline, boxW, boxH, unstyled } = useFaceContext()
+  const values = variant === "quarters" ? QUARTERS : HOURS
+
+  return (
+    <>
+      {values.map((value) => {
+        // 12 sits on the 0° ray: the hour hand's own mapping, arrived at the
+        // same way. Every numeral is a mark, so every numeral goes through
+        // `markTransform` — there is no second placement path here either.
+        const angle = (value % 12) * 30
+        const t = markTransform(
+          outline,
+          { angle, inset },
+          {
+            orient: ORIENT[orient],
+            width: NUMERAL_WIDTH,
+            length: NUMERAL_HEIGHT,
+            boxW,
+            boxH,
+          },
+        )
+        // `?? String(value)` is unreachable by construction — `values` only
+        // ever holds 1–12 — and exists because the index signature says so.
+        const label = variant === "roman" ? (ROMAN[value - 1] ?? String(value)) : String(value)
+        return (
+          <div
+            key={value}
+            className={className}
+            style={{
+              ...markStyle(t),
+              // Structure, not paint: the box is the anchor and the glyph is
+              // centred in it, so a `render` child inherits the same centring
+              // the built-in label gets.
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              whiteSpace: "nowrap",
+              ...(unstyled
+                ? undefined
+                : {
+                    color: "var(--mp-ink)",
+                    // Type size is paint on a numeral track — it is the mark's
+                    // whole visual weight, and a default left behind would
+                    // fight the `className` that replaced it.
+                    fontSize: `${cq(NUMERAL_SIZE, boxW)}cqw`,
+                    fontWeight: 500,
+                    fontVariantNumeric: "tabular-nums",
+                    lineHeight: 1,
+                  }),
+              ...style,
+            }}
+            {...rest}
+            data-mp="numeral"
+          >
+            {render === undefined ? label : render(value, { label, angle })}
+          </div>
+        )
+      })}
+    </>
+  )
 }
 
 /* ------------------------------------------------------------------- Hand */
