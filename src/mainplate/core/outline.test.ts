@@ -408,7 +408,7 @@ describe("resolveOutline", () => {
     expect((caught as Error).message).toMatch(/object with keys \[pointAt\]/)
   })
 
-  it("requires all six methods, not just the first", () => {
+  it("requires all seven methods, not just the first", () => {
     const full = circleOutline()
     for (const missing of [
       "pointAt",
@@ -417,6 +417,7 @@ describe("resolveOutline", () => {
       "path",
       "length",
       "pointAtLength",
+      "normalAtLength",
     ] as const) {
       const partial: Record<string, unknown> = { ...full }
       delete partial[missing]
@@ -518,5 +519,120 @@ describe("arc length — length and pointAtLength", () => {
     const p = o.pointAtLength(200)
     closeTo(p.x, 100)
     closeTo(p.y, 0)
+  })
+})
+
+describe("normalAtLength", () => {
+  it("is the radial direction at that arc position on a circle", () => {
+    const o = circleOutline()
+    const L = o.length()
+    for (const fraction of [0, 0.125, 0.25, 0.4, 0.5, 0.75, 0.9]) {
+      const n = o.normalAtLength(fraction * L)
+      const radial = polarPoint(fraction * 360, 1)
+      closeTo(n.x, radial.x)
+      closeTo(n.y, radial.y)
+    }
+  })
+
+  it("is the axis normal on a rect flank", () => {
+    const o = rectOutline({ ratio: 1, radius: 30 })
+    // 35 units along the 70-unit top run: the top flank, normal straight up.
+    const top = o.normalAtLength(35)
+    closeTo(top.x, 0)
+    closeTo(top.y, -1)
+    // A quarter of the way round a symmetric rect is the right-centre.
+    const right = o.normalAtLength(o.length() / 4)
+    closeTo(right.x, 1)
+    closeTo(right.y, 0)
+    const bottom = o.normalAtLength(o.length() / 2)
+    closeTo(bottom.x, 0)
+    closeTo(bottom.y, 1)
+    const left = o.normalAtLength((o.length() * 3) / 4)
+    closeTo(left.x, -1)
+    closeTo(left.y, 0)
+  })
+
+  it("points away from the corner centre inside a corner arc", () => {
+    const o = rectOutline({ ratio: 1, radius: 30 })
+    // The same position as the corner-arc pointAtLength test: half the top run
+    // then half the first quarter arc, 45 degrees around the centre (70, -70).
+    const s = 70 + (Math.PI * 30) / 4
+    const n = o.normalAtLength(s)
+    closeTo(n.x, Math.SQRT1_2)
+    closeTo(n.y, -Math.SQRT1_2)
+    // And it agrees with the point the same distance returns: the unit vector
+    // from the corner centre to that point, not a re-derivation of its own.
+    const p = o.pointAtLength(s)
+    closeTo(n.x, (p.x - 70) / 30)
+    closeTo(n.y, (p.y + 70) / 30)
+  })
+
+  it("points OUTWARD everywhere, on both shapes and both insets", () => {
+    // The spike derived this normal by epsilon-sampling the tangent and got the
+    // sign inverted, which rendered every mark upside down. The dot product
+    // against the point's own radius vector is what pins the direction: the
+    // centre is the origin, so an outward normal always has a positive dot.
+    for (const o of [circleOutline(), rectOutline({ ratio: 0.82, radius: 30 })]) {
+      for (const inset of [0, 12]) {
+        const L = o.length(inset)
+        for (let k = 0; k < 37; k++) {
+          const s = (k / 37) * L
+          const n = o.normalAtLength(s, inset)
+          const p = o.pointAtLength(s, inset)
+          expect(n.x * p.x + n.y * p.y).toBeGreaterThan(0)
+        }
+      }
+    }
+  })
+
+  it("is a unit vector everywhere, on both shapes and both insets", () => {
+    for (const o of [circleOutline(), rectOutline({ ratio: 0.82, radius: 30 })]) {
+      for (const inset of [0, 12]) {
+        const L = o.length(inset)
+        for (let k = 0; k < 37; k++) {
+          const n = o.normalAtLength((k / 37) * L, inset)
+          closeTo(Math.hypot(n.x, n.y), 1)
+        }
+      }
+    }
+  })
+
+  it("agrees with normalAt, which points the other way", () => {
+    // The two normals are the same line with opposite signs: normalAt is
+    // inward by contract, normalAtLength outward. Sampling by distance and
+    // asking the angular query about the same point is what proves it.
+    const o = rectOutline({ ratio: 0.82, radius: 30 })
+    const L = o.length()
+    for (let k = 0; k < 23; k++) {
+      const s = (k / 23) * L
+      const p = o.pointAtLength(s)
+      const angle = (Math.atan2(p.x, -p.y) * 180) / Math.PI
+      const n = o.normalAtLength(s)
+      const inward = o.normalAt(angle)
+      expect(n.x).toBeCloseTo(-inward.x, 6)
+      expect(n.y).toBeCloseTo(-inward.y, 6)
+    }
+  })
+
+  it("wraps past a full lap and accepts negative distances", () => {
+    const o = rectOutline({ ratio: 1, radius: 30 })
+    const L = o.length()
+    const wrapped = o.normalAtLength(L + 35)
+    closeTo(wrapped.x, 0)
+    closeTo(wrapped.y, -1)
+    const back = o.normalAtLength(-L / 4)
+    closeTo(back.x, -1)
+    closeTo(back.y, 0)
+  })
+
+  it("degenerates to the zero vector when fully collapsed, on both shapes", () => {
+    // Same contract as normalAt at inset 200: no direction exists at a point,
+    // and a fabricated unit vector would be a lie a caller cannot detect.
+    const c = circleOutline().normalAtLength(10, 150)
+    closeTo(c.x, 0)
+    closeTo(c.y, 0)
+    const r = rectOutline({ ratio: 1, radius: 12 }).normalAtLength(10, 200)
+    closeTo(r.x, 0)
+    closeTo(r.y, 0)
   })
 })

@@ -15,10 +15,10 @@ export type Rect = { x: number; y: number; width: number; height: number }
  * A closed path that statics are placed on, queried by angle — or, for
  * `placement="perimeter"`, by distance.
  *
- * The arc-length pair exists because dividing an outline evenly divides
+ * The arc-length queries exist because dividing an outline evenly divides
  * *distance*, not angle: a Tank's chemin de fer spaces its minutes along the
- * perimeter, which no per-angle query can express. Both methods are analytic —
- * straight runs plus quarter arcs, never path sampling.
+ * perimeter, which no per-angle query can express. Every method here is
+ * analytic — straight runs plus quarter arcs, never path sampling.
  */
 export type Outline = {
   /** The point at `angle` on the outline, shrunk inward by `inset`. */
@@ -36,11 +36,39 @@ export type Outline = {
    * angle 0. Wraps in either direction, so any real `s` is on the path.
    */
   pointAtLength(s: DialUnits, inset?: DialUnits): Point
+  /**
+   * The **outward** unit normal at the point `pointAtLength(s, inset)` returns.
+   *
+   * Note the sign: `normalAt` points *inward* — it answers "which way is the
+   * middle" for a mark hung off an angular position — while this points *out*,
+   * because its caller is orienting an element whose top must face away from
+   * the face. The pair is deliberate and the mismatch is the trap: the Plan 5
+   * spike derived this by epsilon-sampling the tangent, inverted the sign, and
+   * rendered a ring of upside-down marks that looked plausible in a thumbnail.
+   *
+   * Analytic like everything else here — the flank normal is the axis normal,
+   * the corner-arc normal is the unit vector from the corner centre out to the
+   * point. Never sampled, so it is exact at the seams too.
+   */
+  normalAtLength(s: DialUnits, inset?: DialUnits): Point
 }
 
 /** The default outline: a circle of the nominal dial radius. */
 export function circleOutline(): Outline {
   const radiusAt = (inset: DialUnits) => Math.max(DIAL_RADIUS - inset, 0)
+
+  /**
+   * The clock angle of the point `s` units along a circle of radius `r`, or
+   * `null` when the circle has collapsed and no point is `s` units along it.
+   *
+   * Shared by the two arc-length queries so a change to the walk cannot move
+   * the point without moving the normal with it. `polar` is periodic, so
+   * wrapping and negative distances come for free.
+   */
+  const angleAtLength = (s: DialUnits, r: DialUnits): Degrees | null => {
+    const circumference = 2 * Math.PI * r
+    return circumference === 0 ? null : (s / circumference) * 360
+  }
 
   return {
     pointAt: (angle, inset = 0) => polar(angle, radiusAt(inset)),
@@ -66,12 +94,17 @@ export function circleOutline(): Outline {
 
     pointAtLength: (s, inset = 0) => {
       const r = radiusAt(inset)
-      const circumference = 2 * Math.PI * r
+      const angle = angleAtLength(s, r)
       // A fully collapsed circle has nowhere to walk; the centre beats NaN.
-      if (circumference === 0) return { x: 0, y: 0 }
-      // Fraction of a turn is fraction of the circumference; `polar` is
-      // periodic, so wrapping and negative distances come for free.
-      return polar((s / circumference) * 360, r)
+      return angle === null ? { x: 0, y: 0 } : polar(angle, r)
+    },
+
+    normalAtLength: (s, inset = 0) => {
+      const angle = angleAtLength(s, radiusAt(inset))
+      // On a circle the outward normal *is* the radial direction — which is
+      // exactly why a sign error here survives every circular face and only
+      // shows up on a rect.
+      return angle === null ? { x: 0, y: 0 } : polar(angle, 1)
     },
   }
 }
@@ -101,7 +134,7 @@ export type OutlineSpec =
 /**
  * Structural check, mirroring `isSource`: every method must be callable.
  *
- * All six, not just `pointAt`. A partial object would otherwise pass as an
+ * All seven, not just `pointAt`. A partial object would otherwise pass as an
  * `Outline` and fail later inside `<Mainplate>` — which calls `bbox()` first —
  * as a bare `TypeError`, losing the branded error this module exists to give.
  */
@@ -114,7 +147,8 @@ function isOutline(v: unknown): v is Outline {
     typeof o.bbox === "function" &&
     typeof o.path === "function" &&
     typeof o.length === "function" &&
-    typeof o.pointAtLength === "function"
+    typeof o.pointAtLength === "function" &&
+    typeof o.normalAtLength === "function"
   )
 }
 
@@ -158,7 +192,7 @@ export function resolveOutline(spec?: OutlineSpec): Outline {
     throw new Error(
       `${received} Pass "circle", "rect", a descriptor such as ` +
         `{ kind: "rect", ratio: 0.78, radius: 12 }, or an Outline from circleOutline() / ` +
-        `rectOutline() with all six methods. Note that an Outline is made of functions, so ` +
+        `rectOutline() with all seven methods. Note that an Outline is made of functions, so ` +
         `it cannot be passed from a React Server Component — use the descriptor form there, ` +
         `or build the Outline inside a "use client" component.`,
     )
@@ -294,6 +328,55 @@ export function rectOutline({
     ] as const
   }
 
+  /**
+   * Walk `s` units clockwise from the top anchor and report both the point
+   * there and the outward unit normal at it.
+   *
+   * One walk, two consumers, so `pointAtLength` and `normalAtLength` cannot
+   * disagree about which segment a distance lands on — the failure that would
+   * put a mark on the flank and rotate it as if it were on the corner arc.
+   * Both answers are per-segment analytic: a flank's normal is its axis
+   * normal, an arc's is the direction from the corner centre to the point.
+   */
+  const walk = (s: DialUnits, inset: DialUnits): { point: Point; normal: Point } => {
+    const d = dims(inset)
+    const total = perimeterOf(d)
+    // Fully collapsed — an inset past both half-extents. The centre beats NaN,
+    // and no direction exists at a point, so the normal degenerates with it
+    // rather than fabricating a unit vector the caller cannot detect.
+    if (total === 0) return { point: { x: 0, y: 0 }, normal: { x: 0, y: 0 } }
+
+    let remaining = ((s % total) + total) % total
+    for (const seg of segmentsOf(d)) {
+      // Zero-length segments — sharp corners, or a fully-consumed edge —
+      // must be stepped over, or the arc maths below divides zero by zero.
+      if (seg.len <= 0) continue
+      if (remaining > seg.len) {
+        remaining -= seg.len
+        continue
+      }
+      if (seg.kind === "line") {
+        return {
+          point: { x: seg.from.x + seg.dir.x * remaining, y: seg.from.y + seg.dir.y * remaining },
+          // Travel is clockwise on a y-down axis, so the outward side is the
+          // direction turned a quarter turn *anticlockwise* on screen:
+          // (x, y) -> (y, -x). The top run's (1, 0) becomes (0, -1), up.
+          normal: { x: seg.dir.y, y: -seg.dir.x },
+        }
+      }
+      const angle = seg.start + (remaining / seg.len) * 90
+      const p = polar(angle, d.rr)
+      return {
+        point: { x: seg.centre.x + p.x, y: seg.centre.y + p.y },
+        // The corner centre is inside the outline, so the same direction that
+        // reaches the point from it is the one that faces away from the face.
+        normal: polar(angle, 1),
+      }
+    }
+    // Float noise walking the last segment; the seam is the honest answer.
+    return { point: { x: 0, y: -d.hh }, normal: { x: 0, y: -1 } }
+  }
+
   return {
     pointAt: (angle, inset = 0) => trace(angle, inset).point,
 
@@ -339,29 +422,8 @@ export function rectOutline({
 
     length: (inset = 0) => perimeterOf(dims(inset)),
 
-    pointAtLength: (s, inset = 0) => {
-      const d = dims(inset)
-      const total = perimeterOf(d)
-      // Fully collapsed — an inset past both half-extents. The centre beats NaN.
-      if (total === 0) return { x: 0, y: 0 }
+    pointAtLength: (s, inset = 0) => walk(s, inset).point,
 
-      let remaining = ((s % total) + total) % total
-      for (const seg of segmentsOf(d)) {
-        // Zero-length segments — sharp corners, or a fully-consumed edge —
-        // must be stepped over, or the arc maths below divides zero by zero.
-        if (seg.len <= 0) continue
-        if (remaining > seg.len) {
-          remaining -= seg.len
-          continue
-        }
-        if (seg.kind === "line") {
-          return { x: seg.from.x + seg.dir.x * remaining, y: seg.from.y + seg.dir.y * remaining }
-        }
-        const p = polar(seg.start + (remaining / seg.len) * 90, d.rr)
-        return { x: seg.centre.x + p.x, y: seg.centre.y + p.y }
-      }
-      // Float noise walking the last segment; the seam is the honest answer.
-      return { x: 0, y: -d.hh }
-    },
+    normalAtLength: (s, inset = 0) => walk(s, inset).normal,
   }
 }
