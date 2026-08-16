@@ -14,6 +14,14 @@
  * are three arcs on the face's one embedded `<svg>`, and nothing about paths
  * or view boxes is written here any more. What stays is the gauge's own — how
  * a reading becomes a dash offset, and that the offset GLIDES.
+ *
+ * **Circle-only, by design.** `<Gauge>` states no `shape` prop, and the shape
+ * task deliberately left it that way: the sweep fill's `pathLength`/dash
+ * technique equates ANGLE with ARC LENGTH — true on a circle, false on every
+ * other outline — so a rect gauge's fill would run fast on the flats and slow
+ * around the corners while its needle read correctly. A shaped gauge needs a
+ * different fill primitive before it can exist; until someone builds one,
+ * the face stays round.
  */
 import { type ComponentProps, type ReactNode, type RefObject, useEffect, useRef } from "react"
 import { isSource, quantize, type Scale, type Source } from "../core"

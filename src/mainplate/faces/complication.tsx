@@ -134,6 +134,9 @@ export function Complication({
       outline,
       boxW: box.width,
       boxH: box.height,
+      // A register is round, so its silhouette is: parts inside pick their
+      // circle defaults however shaped the face it sits on is.
+      cornerRadius: null,
       unstyled: outer.unstyled,
       registerLive: outer.registerLive,
     }

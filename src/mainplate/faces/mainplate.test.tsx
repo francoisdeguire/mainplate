@@ -439,14 +439,15 @@ describe("<Ticks> — composable tracks", () => {
     ).toThrow(/mainplate:/)
   })
 
-  it("the default variant is those same two tracks, placed by angle", () => {
-    // The strengthening this task's placement change earns: on a shaped face,
-    // angular placement puts the minute at value 5 exactly under the hour mark
-    // at value 5, and perimeter placement does not. `radial` reports the
-    // placement angle verbatim, so the marks can be read straight off.
+  it("an explicit population stays angular on a shaped face — hands point at its marks", () => {
+    // Task 7 pinned the default pair to angles so `skip` could carve aligned
+    // holes; the shape task moved the RECT default's minors to the perimeter
+    // (shape.test.tsx owns that contract). What must survive both decisions:
+    // a track a consumer states is placed by angle wherever the face is
+    // shaped, so a hand pointing at value 30 points at the mark for 30.
     const { container } = render(
       <Mainplate label="x" shape={{ ratio: 0.82, radius: 30 }}>
-        <Ticks orient="radial" />
+        <Ticks count={60} />
       </Mainplate>,
     )
     const angles = anglesOf(container)
@@ -1313,6 +1314,10 @@ describe("quantisation — every inline style value parses to ≤4dp", () => {
               repeats too. Both reach the style through `markTransform`. */}
           <Ticks count={7} startAngle={-100} sweepAngle={200} inset={30} orient="radial" />
           <Ticks every={7} from={0} to={30} startAngle={-100} sweepAngle={200} inset={36} />
+          {/* The perimeter walk on the same ugly sweep: every arc-length it
+              maps is a long float before quantisation, and its rotations come
+              back through `atan2` like the tangential numerals below. */}
+          <Ticks count={7} startAngle={-100} sweepAngle={200} inset={33} placement="perimeter" />
           {/* Both derived orientations, on the shape whose normals are not the
               ray: `tangential` reaches the style through `atan2`, which is
               exactly where an unquantised float would get in. */}

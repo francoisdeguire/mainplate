@@ -75,6 +75,28 @@ describe("the face core on the server", () => {
     expect(first).toContain("translate(-50%")
   })
 
+  it("renders a rect face byte-identically across two calls", async () => {
+    const { Mainplate } = await import("./mainplate")
+    const { Dial, Hand, Numerals, Ticks } = await import("./parts")
+    // The full rect surface: the span majors, the perimeter minute ring, the
+    // inward numeral ring and a hand — every placement path the shape task
+    // added renders on the server, deterministically.
+    const face = (
+      <Mainplate label="Rect" shape={{ ratio: 0.82, radius: 30 }}>
+        <Dial />
+        <Ticks />
+        <Numerals />
+        <Hand value={10} />
+      </Mainplate>
+    )
+    const first = renderToString(face)
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    const second = renderToString(face)
+    expect(second).toBe(first)
+    // The rect bbox is 200 × ~243.9, grown by 10 padding a side.
+    expect(first).toContain("aspect-ratio:220 / 263.9024")
+  })
+
   it("renders the root contract: role, label, container, aspect ratio", async () => {
     const { Mainplate } = await import("./mainplate")
     const html = renderToString(<Mainplate label="Analog clock" />)

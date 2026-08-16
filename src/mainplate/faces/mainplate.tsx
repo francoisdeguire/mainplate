@@ -33,9 +33,10 @@ import { paletteVars } from "./palette"
 
 /**
  * The face's shape. Plain data so it crosses the Server Component boundary;
- * `{ ratio, radius }` is the Meridian/Tank form. Rect tick math goes live in
- * the shape task — until then a rect face renders, on the same engine, with
- * the circle's part defaults.
+ * `{ ratio, radius }` is the Meridian/Tank form. A rect face renders with the
+ * rect's own defaults: the dial's border-radius is the shape's corner radius,
+ * angular ticks are radial spans (spec §3), and the default minute ring is
+ * perimeter-placed — the Meridian look with no further props.
  */
 export type FaceShape = "circle" | "rect" | { ratio?: number; radius?: number }
 
@@ -160,7 +161,21 @@ export function Mainplate({
     // The same box `dialPercent` would use for an HTML layer beside this
     // face: bbox grown by the unclipped padding. One function, two consumers.
     const box = frameBox({ outline, clip: false })
-    return { outline, boxW: box.width, boxH: box.height, unstyled, registerLive: liveness.register }
+    // The silhouette the shape-aware defaults read. Clamped the way the
+    // outline itself clamps (`rectOutline` caps the radius at the half
+    // extents), so the dial's border-radius can never exceed the corner the
+    // ticks are actually placed around.
+    const bbox = outline.bbox()
+    const cornerRadius =
+      kind === "circle" ? null : Math.min(radius ?? 0, bbox.width / 2, bbox.height / 2)
+    return {
+      outline,
+      boxW: box.width,
+      boxH: box.height,
+      cornerRadius,
+      unstyled,
+      registerLive: liveness.register,
+    }
   }, [kind, ratio, radius, unstyled, liveness])
 
   const attachRef = useCallback(

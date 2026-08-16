@@ -32,6 +32,16 @@ export type FaceContextValue = {
   outline: Outline
   boxW: number
   boxH: number
+  /**
+   * The face's silhouette, for parts whose DEFAULTS depend on it: `null` on a
+   * round face, the corner radius in dial units (0 for square corners) on a
+   * rect. Two consumers and no more — `<Dial>` turns it into `border-radius`,
+   * and `<Ticks>` picks the default track pair with it (a rect face's minute
+   * ring is perimeter-placed, a circle's keeps the skip pair). GEOMETRY never
+   * reads it: placement always goes through the outline, which is why a
+   * square-cornered rect is not a circle even though its bbox is square.
+   */
+  cornerRadius: number | null
   /** Zero default paint (the sonner escape hatch); parts skip every background. */
   unstyled: boolean
   /**

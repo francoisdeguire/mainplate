@@ -37,7 +37,13 @@ import {
 } from "../core"
 import { bindRotation } from "./bind-rotation"
 import { useFaceContext } from "./context"
-import { type MarkTransform, markTransform, type Orient, resolveDomain } from "./geometry"
+import {
+  type MarkTransform,
+  markTransform,
+  type Orient,
+  resolveDomain,
+  spanTransform,
+} from "./geometry"
 
 /** Dial units → cqw (percent of the container's inline size), quantised. */
 function cq(u: number, boxW: number): number {
@@ -91,7 +97,7 @@ export type DialProps = {
  * hard-edged design-system surface has one obvious `className` target.
  */
 export function Dial({ className, style, children, ...rest }: DialProps) {
-  const { outline, boxW, unstyled } = useFaceContext()
+  const { outline, boxW, cornerRadius, unstyled } = useFaceContext()
   const box = outline.bbox()
   return (
     <div
@@ -106,10 +112,11 @@ export function Dial({ className, style, children, ...rest }: DialProps) {
         ...(unstyled
           ? undefined
           : {
-              // A round dial is a border-radius; the rect dial's corner radius
-              // is pinned properly by the shape task — until then this is the
-              // spike's eyeballed constant, good for the default rect only.
-              borderRadius: box.width === box.height ? "50%" : `${cq(24, boxW)}cqw`,
+              // A round dial is a border-radius; a rect dial's is the SHAPE's
+              // own corner radius, converted dial units → cqw. The silhouette
+              // flag decides, not the bbox: a `ratio: 1` rect has a square
+              // bbox and is still emphatically not a circle.
+              borderRadius: cornerRadius === null ? "50%" : `${cq(cornerRadius, boxW)}cqw`,
               background: "var(--mp-dial)",
             }),
         ...style,
@@ -176,6 +183,21 @@ export type TicksProps = {
    * minute so the hour track stands in the gap.
    */
   skip?: readonly number[] | ((value: number, mark: TickMark) => boolean)
+  /**
+   * How the track lays its marks on a shaped face — the two rhythms spec §3
+   * names, indistinguishable on a circle:
+   *
+   * - `"angular"` — each mark stands on its frame ray, so a hand pointing at
+   *   value v points at the mark for v. On a rect these are the radial spans
+   *   (rotation = the angle, `1/cos θ` stretch and width correction), whose
+   *   inner ends describe the uniform inset ring.
+   * - `"perimeter"` — the marks divide the outline's LENGTH evenly (the
+   *   chemin-de-fer rhythm): a fraction of the sweep is the same fraction of
+   *   the perimeter, which no angular walk gives a non-circle.
+   *
+   * @default "angular"
+   */
+  placement?: "angular" | "perimeter"
   /** Distance inward from the outline to the mark's OUTER end, so tracks of different lengths share an edge. @default 4 */
   inset?: number
   /**
@@ -191,7 +213,14 @@ export type TicksProps = {
   length?: number
   /** The mark's extent across its own axis, in dial units. */
   width?: number
-  /** Which way each mark faces. @default "edge" */
+  /**
+   * Which way each mark faces. The default follows the placement — `"radial"`
+   * for angular marks (the span ring; identical to `"edge"` on a circle) and
+   * `"edge"` for perimeter marks (square to the outline they walk). An
+   * angular mark left radial IS the radial span; any other word opts it back
+   * into a fixed-length mark, which is how the Tank's edge-perpendicular
+   * style stays expressible.
+   */
   orient?: Orient
   /** Where the track's domain starts, in degrees from 12 o'clock. @default 0 */
   startAngle?: number
@@ -236,6 +265,17 @@ const CLOSED_ARC_EPSILON = 1e-9
 /** The default pair's hole: every fifth minute belongs to the hour track. */
 const EVERY_FIFTH = (value: number) => value % 5 === 0
 
+/**
+ * Where the RECT default pair stands its hour bars: inside the minute ring
+ * (whose marks end at inset 9), not interleaved with it. On a circle the two
+ * tracks share one ring because every fifth minute IS the hour position; on a
+ * rect the minute ring is perimeter-placed and the hours are angular, so the
+ * two rhythms only meet at 12/3/6/9 — sharing an inset would scatter
+ * near-collisions around every other hour. Standing the bars a clear step
+ * inward is also simply what the reference face (Meridian) does.
+ */
+const RECT_MAJOR_INSET = 13
+
 /** A custom mark fills the box it was given, centred, exactly as a numeral does. */
 const CENTRED: CSSProperties = {
   display: "flex",
@@ -246,13 +286,16 @@ const CENTRED: CSSProperties = {
 /**
  * One tick track. Internal: `<Ticks>` is either this once, or twice.
  *
- * Placement is **angular, never by perimeter length**, and that is the change
- * that makes stacking work at all. A minute at value 5 must sit exactly under
- * the hour mark at value 5 — otherwise a `skip` carves a hole where no major
- * stands, which on a circle is invisible and on any shaped face is a broken
- * ring. Perimeter placement (the chemin-de-fer rhythm the minimal part shipped)
- * cannot promise that; `markTransform`'s `along` form still can, and the shape
- * task is where a track that wants it gets the word back.
+ * Placement defaults to **angular** — a minute at value 5 sits exactly under
+ * the hour mark at value 5, so a `skip` carves its hole where a major stands
+ * and a hand pointing at a value points at its mark. An angular mark left in
+ * its radial default renders as the **radial span** (spec §3, the owner's
+ * correction): the segment of the frame ray between the outer inset and the
+ * inner one, rotated to the angle itself, width-corrected by `1/cos θ` so
+ * oblique marks do not read thin. On a circle that is bit-for-bit the old
+ * fixed-length mark; on a rect it is what makes the ring uniform. Perimeter
+ * placement — the chemin-de-fer rhythm Task 7's rewrite set aside — is back
+ * as the stated alternative, and is what the rect default's minute ring uses.
  *
  * The population itself is the engine's — `resolveTicks` already owns the
  * fencepost rule, the epsilon-matched `skip`, and the runaway-`every` ceiling.
@@ -265,11 +308,12 @@ function Track({
   from = 0,
   to,
   skip,
+  placement = "angular",
   inset = TICK_INSET,
   emphasis = "minor",
   length,
   width,
-  orient = "edge",
+  orient,
   startAngle = 0,
   sweepAngle = 360,
   className,
@@ -281,6 +325,11 @@ function Track({
   const major = emphasis === "major"
   const markLength = length ?? (major ? MAJOR_LENGTH : MINOR_LENGTH)
   const markWidth = width ?? (major ? MAJOR_WIDTH : MINOR_WIDTH)
+  // The placement's own default orientation: angular marks lie on their ray,
+  // perimeter marks stand square to the outline they walk. On a circle the
+  // two words are the same direction, which is why nobody misses this knob
+  // until a face is shaped.
+  const markOrient = orient ?? (placement === "perimeter" ? "edge" : "radial")
 
   // The three populations are exactly-one-of, the engine's own rule: combining
   // them would need a precedence order, and a precedence order is a thing to
@@ -340,18 +389,46 @@ function Track({
         : { tiers: every === undefined ? [] : [{ every }], skip: skipMarks }
   const marks = resolveTicks(input, scale)
 
+  // The perimeter walk's inputs, shared by every mark on it: the fraction of
+  // a full turn a mark's angle names becomes the same fraction of the inset
+  // outline the mark's CENTRE walks. Its quarter points land on the flank
+  // centres for any ratio (each quarter is one flank half + one corner + one
+  // flank half), so 12/3/6/9 stay where the angular track puts them.
+  const centreInset = inset + markLength / 2
+  const perimeter = placement === "perimeter" ? outline.length(centreInset) : 0
+
   return (
     <>
       {marks.map((mark) => {
         const angle = quantize(valueToAngle(mark.value, scale))
-        const t = markTransform(
-          outline,
-          // `inset` names the mark's outer end; `markTransform` places its
-          // centre. One conversion, so two tracks of different lengths line up
-          // along their outer edge rather than their middles.
-          { angle, inset: inset + markLength / 2 },
-          { orient, width: markWidth, length: markLength, boxW, boxH },
-        )
+        // Three ways a mark becomes a transform, all owned by the geometry
+        // module. `inset` names the mark's outer end everywhere, so tracks of
+        // different lengths line up along their outer edge:
+        // - perimeter: centre at the arc-length point, fixed length;
+        // - angular radial: THE SPAN — pointAt(angle, inset)…pointAt(angle,
+        //   inset + length), rotation = the angle, width corrected by 1/cosθ
+        //   (spec §3; a span already stretches, so its length input is the
+        //   inset difference);
+        // - angular, any other orient: a fixed-length mark at the ray's point.
+        const t =
+          placement === "perimeter"
+            ? markTransform(
+                outline,
+                { along: (angle / 360) * perimeter, inset: centreInset },
+                { orient: markOrient, width: markWidth, length: markLength, boxW, boxH },
+              )
+            : markOrient === "radial"
+              ? spanTransform(outline, angle, inset, inset + markLength, {
+                  width: markWidth,
+                  obliquityWidth: true,
+                  boxW,
+                  boxH,
+                })
+              : markTransform(
+                  outline,
+                  { angle, inset: inset + markLength / 2 },
+                  { orient: markOrient, width: markWidth, length: markLength, boxW, boxH },
+                )
         return (
           <div
             key={mark.index}
@@ -392,8 +469,12 @@ function Track({
  * <Ticks count={12} emphasis="major" />
  * ```
  *
- * — which is what a bare `<Ticks/>` renders, because the default pair below is
- * exactly that composition and nothing else. `emphasis` is the whole of the
+ * — which is what a bare `<Ticks/>` renders on a round face, because the
+ * default pair below is exactly that composition and nothing else. On a RECT
+ * face the bare default is the other classic instead: a continuous
+ * perimeter-placed minute ring with angular hour bars standing inside it (the
+ * Meridian layout) — same two tracks, recomposed for the shape, and stated in
+ * full in the second branch below. `emphasis` is the whole of the
  * prominence vocabulary: before it existed, a hand-written major track had to
  * restate two private numbers and an internal palette variable (the Task 10
  * freeze finding). There is no collision rule to learn, no tier index, and no
@@ -412,6 +493,11 @@ export function Ticks({
   width,
   ...shared
 }: TicksProps) {
+  // The one thing the sugar reads from the face itself: its silhouette. The
+  // default pair is a shape decision — see the two compositions below.
+  const { cornerRadius } = useFaceContext()
+  const round = cornerRadius === null
+
   // Anything that states a population is one explicit track; `variant` is only
   // consulted when nothing does.
   if (count !== undefined || every !== undefined || values !== undefined) {
@@ -434,10 +520,31 @@ export function Ticks({
   // consumer's `className` most often means, and DOM order is z-order.
   // `emphasis` sits after the spread: the pair's major track is major by
   // definition, whatever rode in on the sugar's shared props.
+  if (round) {
+    return (
+      <>
+        <Track count={variant === "quarters" ? 4 : 12} {...shared} emphasis="major" />
+        {variant === "all" ? <Track count={60} skip={EVERY_FIFTH} {...shared} /> : null}
+      </>
+    )
+  }
+
+  // The rect default pair is a different composition, not different marks:
+  // angular hour bars standing inside a CONTINUOUS perimeter minute ring —
+  // the Meridian layout. No `skip`: the minute ring's rhythm is the
+  // perimeter's and the hours' is angular, so carving fifth-minute holes
+  // would open gaps nowhere near the bars. The bars keep the outer inset
+  // when they are alone (`"quarters"`, and `"all"`'s ring gone) — they only
+  // step inward to clear a ring that exists.
   return (
     <>
-      <Track count={variant === "quarters" ? 4 : 12} {...shared} emphasis="major" />
-      {variant === "all" ? <Track count={60} skip={EVERY_FIFTH} {...shared} /> : null}
+      <Track
+        count={variant === "quarters" ? 4 : 12}
+        inset={variant === "all" ? RECT_MAJOR_INSET : TICK_INSET}
+        {...shared}
+        emphasis="major"
+      />
+      {variant === "all" ? <Track count={60} placement="perimeter" {...shared} /> : null}
     </>
   )
 }
@@ -485,6 +592,15 @@ const ROMAN = ["I", "II", "III", "IIII", "V", "VI", "VII", "VIII", "IX", "X", "X
 
 /** The numeral track's geometry, in dial units. Private: sizing is CSS. */
 const NUMERAL_INSET = 22
+/**
+ * The rect ring sits deeper, because the rect default TICKS do: its hour bars
+ * stand at inset 13–22 (`RECT_MAJOR_INSET`), exactly where the circle parks
+ * its numerals. 31 restores the circle's clearance relationship — the bars'
+ * inner ends stay ~1 unit outside the glyph extent at every hour, the same
+ * gap the circle's ring keeps to its majors — re-judged for the shape task
+ * by the clearance test in shape.test.tsx.
+ */
+const RECT_NUMERAL_INSET = 31
 const NUMERAL_WIDTH = 26
 const NUMERAL_HEIGHT = 16
 const NUMERAL_SIZE = 12
@@ -499,9 +615,10 @@ export type NumeralsProps = {
   orient?: NumeralOrient
   /**
    * Distance inward from the outline to the numeral box's centre, in dial
-   * units. The default clears the minute track's inner ends with room to
-   * spare; a face with its own tick geometry moves the ring rather than
-   * measuring glyphs. @default 22
+   * units. The default clears the default tick geometry's inner ends with
+   * room to spare — 22 on a round face, 31 on a rect, whose default hour
+   * bars stand deeper; a face with its own tick geometry moves the ring
+   * rather than measuring glyphs.
    */
   inset?: number
   className?: string
@@ -535,14 +652,15 @@ export type NumeralsProps = {
 export function Numerals({
   variant = "arabic",
   orient = "upright",
-  inset = NUMERAL_INSET,
+  inset,
   className,
   style,
   render,
   ...rest
 }: NumeralsProps) {
-  const { outline, boxW, boxH, unstyled } = useFaceContext()
+  const { outline, boxW, boxH, cornerRadius, unstyled } = useFaceContext()
   const values = variant === "quarters" ? QUARTERS : HOURS
+  const ringInset = inset ?? (cornerRadius === null ? NUMERAL_INSET : RECT_NUMERAL_INSET)
 
   return (
     <>
@@ -553,7 +671,7 @@ export function Numerals({
         const angle = (value % 12) * 30
         const t = markTransform(
           outline,
-          { angle, inset },
+          { angle, inset: ringInset },
           {
             orient: ORIENT[orient],
             width: NUMERAL_WIDTH,
