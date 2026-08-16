@@ -5,74 +5,9 @@
  * May import: react, core/errors, core/source, ticker. Must not be imported by core/.
  */
 import { useState } from "react"
-import { failSoft } from "../core/errors"
 import { createSource, type Source } from "../core/source"
 import { type Cadence, getTicker, type Ticker } from "./ticker"
-
-/** One wall-clock instant, already decomposed into the target zone. */
-type Wall = { h: number; m: number; s: number; ms: number }
-
-/**
- * 10:09:36 — the time every watch advertisement shows. Served by `get()`
- * whenever there is no client clock worth reading (§9.5): a server baking
- * real time into HTML would emit different markup on every request, so the
- * face wears its marketing pose until the client's ticker takes over.
- */
-const MARKETING: Wall = { h: 10, m: 9, s: 36, ms: 0 }
-
-const MS_PER_SECOND = 1000
-
-/**
- * Wall-clock decomposition goes through `Intl` and nothing else (§9.4): a
- * manual UTC offset is right until the zone's next DST transition and then
- * wrong by an hour. An unrecognised zone is a programmer error — development
- * throws here, at the hook call; production falls back to the environment's
- * local zone and says so once.
- */
-function formatterFor(timezone: string | undefined): Intl.DateTimeFormat {
-  const base: Intl.DateTimeFormatOptions = {
-    hour: "2-digit",
-    hourCycle: "h23",
-    minute: "2-digit",
-    second: "2-digit",
-  }
-  try {
-    return new Intl.DateTimeFormat("en-US", { ...base, timeZone: timezone })
-  } catch {
-    failSoft(
-      `mainplate: useWatchSource received timezone=${JSON.stringify(timezone)}, which Intl does ` +
-        'not recognise — pass an IANA zone such as "America/New_York" or "Asia/Tokyo".',
-      "Falling back to the environment's local zone.",
-    )
-    return new Intl.DateTimeFormat("en-US", base)
-  }
-}
-
-/**
- * Build the epoch→wall decomposer all five fields share, memoised on the last
- * stamp: the ticker hands every subscriber in a frame the same instant, so a
- * full clock face costs one `formatToParts` per frame, not five.
- */
-function createWallClock(timezone: string | undefined): (epochMs: number) => Wall {
-  const formatter = formatterFor(timezone)
-  let lastEpoch = Number.NaN
-  let lastWall = MARKETING
-  return (epochMs) => {
-    if (epochMs === lastEpoch) return lastWall
-    // Zone offsets are whole seconds in every real zone, so the millisecond
-    // field never needs Intl — which does not serve sub-second parts anyway.
-    const ms = ((epochMs % MS_PER_SECOND) + MS_PER_SECOND) % MS_PER_SECOND
-    const wall: Wall = { h: 0, m: 0, s: 0, ms }
-    for (const part of formatter.formatToParts(epochMs)) {
-      if (part.type === "hour") wall.h = Number(part.value)
-      else if (part.type === "minute") wall.m = Number(part.value)
-      else if (part.type === "second") wall.s = Number(part.value)
-    }
-    lastEpoch = epochMs
-    lastWall = wall
-    return wall
-  }
-}
+import { createWallClock, fieldValue, MARKETING, type Wall } from "./wall-clock"
 
 /** What a paused field must do when its face leaves or re-enters the viewport. */
 type FieldHooks = { pause(): void; resume(): void }
@@ -143,24 +78,6 @@ const DOMAINS: Record<FieldName, { min: number; max: number }> = {
   minute: { min: 0, max: 60 },
   ms: { min: 0, max: 1000 },
   second: { min: 0, max: 60 },
-}
-
-/**
- * One instant → one field, fractional all the way up (§9.2): 3:30 is hour
- * 3.5, so an hour hand creeps the way a real one does. Tick cadence truncates
- * the sub-second part — the value a quartz step shows — which is what lets a
- * tick source pair with the ticker's sleeping timer instead of sanding a rAF
- * feed down at the hand (§9.3).
- */
-function fieldValue(field: FieldName, wall: Wall, cadence: Cadence): number {
-  const s = cadence === "tick" ? wall.s : wall.s + wall.ms / MS_PER_SECOND
-  const m = wall.m + s / 60
-  const h = wall.h + m / 60
-  if (field === "hour") return h % 12
-  if (field === "hour24") return h
-  if (field === "minute") return m
-  if (field === "second") return s
-  return cadence === "tick" ? 0 : wall.ms
 }
 
 /**
@@ -293,7 +210,7 @@ export type WatchSources = {
 /** Build the five fields over one shared decomposer, ticker, and visibility. */
 function createSources(options: WatchSourceOptions | undefined): WatchSources {
   const ticker = getTicker()
-  const wallOf = createWallClock(options?.timezone)
+  const wallOf = createWallClock(options?.timezone, "useWatchSource")
   const visibility = createVisibility()
   return {
     hour: createField(ticker, "hour", options?.hour ?? "glide", wallOf, visibility),

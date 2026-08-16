@@ -194,12 +194,34 @@ const PRESETS: Record<
   plain: { length: 68, tail: 12, width: 5, max: 60, accent: false },
 }
 
+/**
+ * The same hands on a face with no numerals, reaching into the ring the
+ * numerals would have occupied (spec §12: minute 68 → 80). The spike gave one
+ * anchor; hour and second follow it proportionally, so the three keep the
+ * length relationships the eye reads as a set. Private constants, selected by
+ * a wrapper's `numerals` prop — there is no public length prop, by plan
+ * constraint, and this is why one is not missed.
+ */
+const LONG_REACH: Record<HandType | "plain", number> = {
+  hour: 54,
+  minute: 80,
+  second: 86,
+  plain: 80,
+}
+
 /** The stepping cadence's ease: fast out, soft landing — a quartz escapement. */
 const TICK_TRANSITION = "transform 180ms cubic-bezier(0.23, 1, 0.32, 1)"
 
 export type HandProps = {
-  /** The reading. A number is controlled; a `Source` is live (zero renders per update). */
-  value: number | Source<number>
+  /**
+   * The reading. A number is controlled; a `Source` is live (zero renders per
+   * update). Omit it only as a slot inside `<Clock>`/`<Gauge>`: the wrapper
+   * owns the reading and supplies it to whatever fills the slot, which is what
+   * lets `<Clock><Hand type="second" className="…"/></Clock>` restyle the
+   * seconds hand without also re-wiring it. A bare hand with no value sits at
+   * its domain minimum.
+   */
+  value?: number | Source<number>
   /** Geometry and domain preset. Untyped hands get the minute's geometry over 0-60. */
   type?: HandType
   /** Domain minimum. Beats `source.domain`, which beats the type preset. @default 0 */
@@ -219,6 +241,12 @@ export type HandProps = {
    * (59s→0s is +6°; a decreasing reading swings back the short way). @default false
    */
   tick?: boolean
+  /**
+   * Reach further into the ring a numeral track would have occupied. Set by
+   * `<Clock numerals="none">` and by `<Gauge>`, whose face has no numerals at
+   * all; the lengths themselves stay private constants. @default false
+   */
+  long?: boolean
   className?: string
   /** Replaces the shape entirely: the rotating box owns pivot and rotation, children own the look. */
   children?: ReactNode
@@ -242,6 +270,7 @@ export function Hand({
   sweepAngle = 360,
   variant = "bar",
   tick = false,
+  long = false,
   className,
   style,
   children,
@@ -249,7 +278,9 @@ export function Hand({
   ...rest
 }: HandProps) {
   const { boxW, unstyled, registerLive } = useFaceContext()
-  const preset = PRESETS[type ?? "plain"]
+  const kind = type ?? "plain"
+  const preset = PRESETS[kind]
+  const length = long ? LONG_REACH[kind] : preset.length
 
   const source = isSource(value) ? value : null
   const controlled = typeof value === "number" ? value : 0
@@ -259,8 +290,8 @@ export function Hand({
   const domainMin = min ?? source?.domain?.min ?? 0
   const domainMax = max ?? source?.domain?.max ?? preset.max
 
-  const total = preset.length + preset.tail
-  const pivot = quantize((preset.length / total) * 100)
+  const total = length + preset.tail
+  const pivot = quantize((length / total) * 100)
   const translate = `translate(-50%, -${pivot}%)`
 
   const read = useMemo(() => {
@@ -291,20 +322,47 @@ export function Hand({
     const node = el.current
     if (node === null) return
     const options = { translate, unwrap: tick, state: accumulator.current }
+
+    /**
+     * Bind, with the mount pose exempted from the stepping transition.
+     *
+     * A hand's first write is where it *is*, not a step it took. Render emits
+     * the translate alone — every hand points at 12 until the binder runs — so
+     * with the transition armed that write animates the hand in from 12
+     * o'clock over 180ms while the untransitioned hands beside it snap into
+     * place, and it replays on every remount. One hand arriving late is read
+     * as lag, not as charm, so the first write lands instantly and every step
+     * after it animates. The accumulator dates the write: it is null exactly
+     * once, before the hand has ever been placed.
+     */
+    const bind = (to: typeof subscribe) => {
+      const armed = node.style.transition
+      const mounting = tick && accumulator.current.last === null
+      if (mounting) node.style.transition = "none"
+      const off = bindRotation(node, read, to, options)
+      if (mounting) {
+        // Flush the pose against `none` before re-arming, or the restore lands
+        // in the same style recalc and the transition runs after all.
+        void node.getBoundingClientRect()
+        node.style.transition = armed
+      }
+      return off
+    }
+
     if (subscribe === null) {
       // Controlled: one write per value change, no liveness to manage.
-      return bindRotation(node, read, null, options)
+      return bind(null)
     }
     // Live: bind, and register so the face can pause this hand offscreen.
     // Pausing IS unbinding — the unsubscribe rides the source's own refcount
     // down to the engine — and resuming rebinds, whose initial write resyncs
     // to the value as of now (seeded, so within ±180°) rather than replaying
     // the backlog.
-    let unbind = bindRotation(node, read, subscribe, options)
+    let unbind = bind(subscribe)
     const unregister = registerLive({
       pause: () => unbind(),
       resume: () => {
-        unbind = bindRotation(node, read, subscribe, options)
+        unbind = bind(subscribe)
       },
     })
     return () => {

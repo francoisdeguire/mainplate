@@ -42,7 +42,7 @@ describe("paletteVars", () => {
     expect(vars["--mp-tick"]).toBe("oklch(from var(--primary) l c h / 0.32)")
   })
 
-  it("emits exactly the six face variables, all --mp- prefixed", () => {
+  it("emits exactly the seven face variables, all --mp- prefixed", () => {
     expect(Object.keys(paletteVars(undefined)).sort()).toEqual([
       "--mp-accent",
       "--mp-dial",
@@ -50,6 +50,16 @@ describe("paletteVars", () => {
       "--mp-numeral",
       "--mp-tick",
       "--mp-tick-major",
+      "--mp-warning",
     ])
+  })
+
+  it("keeps the warning hue fixed while the accent follows the color", () => {
+    // A redline is a meaning, not a theme: it stays the warm red whatever the
+    // face is themed, while the accent beside it becomes the caller's hue.
+    const themed = paletteVars("oklch(0.45 0.16 264)")
+    expect(themed["--mp-warning"]).toBe("oklch(0.62 0.19 27)")
+    expect(themed["--mp-accent"]).not.toBe(themed["--mp-warning"])
+    expect(paletteVars(undefined)["--mp-warning"]).toBe("oklch(0.62 0.19 27)")
   })
 })

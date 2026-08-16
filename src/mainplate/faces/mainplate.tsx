@@ -152,7 +152,15 @@ export type MainplateProps = {
   unstyled?: boolean
   className?: string
   children?: ReactNode
-} & Omit<ComponentProps<"div">, "children" | "className" | "role" | "aria-label">
+  /**
+   * Standard div attributes, `role` among them. It defaults to `"img"` — a
+   * face is a picture — and `<Gauge>` overrides it with `"meter"` plus the
+   * `aria-value*` trio, so a reading reaches assistive technology as a value.
+   * Both roles are Children-Presentational-True in ARIA 1.2, so no part below
+   * ever needs `aria-hidden` of its own. `aria-label` is the exception the
+   * spread cannot reach: the accessible name is this root's own contract.
+   */
+} & Omit<ComponentProps<"div">, "children" | "className" | "aria-label">
 
 /**
  * The context root: an HTML div wearing the palette, sized by CSS, named for
@@ -214,9 +222,11 @@ export function Mainplate({
           ...(paletteVars(color) as CSSProperties),
           ...style,
         }}
+        // Before the spread, so a face that is a meter can say so; after it,
+        // the name and the ref stay the root's own.
+        role="img"
         {...rest}
         ref={attachRef}
-        role="img"
         aria-label={label}
       >
         {children}

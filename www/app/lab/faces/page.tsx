@@ -1,13 +1,15 @@
 "use client"
 
 /**
- * The face core, bare: `<Mainplate>` + parts, no wrappers yet. Judged on the
- * owner's design direction — light ground, near-black ink, the warm-red
- * accent and nothing else. Dark-ground correctness is a jsdom capability
- * test, never a demo card.
+ * The faces lab: tier 1 first — `<Clock/>` and `<Gauge value={n}/>` with no
+ * other props, which is the bar the whole library is judged on — then the bare
+ * core they are built from. Light ground, near-black ink, one warm-red accent,
+ * per the owner's design direction. Dark-ground correctness is a jsdom
+ * capability test, never a demo card.
  */
 
-import { Cap, Dial, Hand, Mainplate, Ticks } from "@/mainplate/faces"
+import { useState } from "react"
+import { Cap, Clock, Dial, Gauge, Hand, Mainplate, Ticks } from "@/mainplate/faces"
 import { useWatchSource } from "@/mainplate/time"
 import { LabNav, ScratchNotice } from "../nav"
 
@@ -21,21 +23,6 @@ function SweepFace() {
       <Hand value={clock.hour} type="hour" />
       <Hand value={clock.minute} type="minute" />
       <Hand value={clock.second} type="second" />
-      <Cap />
-    </Mainplate>
-  )
-}
-
-/** The stepping quartz hand — the transition + unwrap path, live at :59 → :00. */
-function TickFace() {
-  const clock = useWatchSource({ second: "tick" })
-  return (
-    <Mainplate label="Analog clock, stepping seconds" className="w-56">
-      <Dial />
-      <Ticks />
-      <Hand value={clock.hour} type="hour" />
-      <Hand value={clock.minute} type="minute" />
-      <Hand value={clock.second} type="second" tick />
       <Cap />
     </Mainplate>
   )
@@ -55,19 +42,28 @@ function QuartersFace() {
   )
 }
 
-/** A controlled needle over a custom domain — the gauge posture, statically. */
-function NeedleFace() {
+/** The controlled path, driven by hand: the needle glides to each new value. */
+function SliderGauge() {
+  const [value, setValue] = useState(72)
   return (
-    <Mainplate label="Reading: 68 of 100" className="w-56">
-      <Dial />
-      <Ticks variant="quarters" />
-      <Hand value={68} min={0} max={100} startAngle={-135} sweepAngle={270} variant="taper" />
-      <Cap />
-    </Mainplate>
+    <div className="flex flex-col items-center gap-4">
+      <Gauge value={value} max={220} redline={[180, 220]} label="Speed" className="w-56" />
+      <input
+        type="range"
+        min={0}
+        max={220}
+        value={value}
+        onChange={(event) => setValue(Number(event.target.value))}
+        className="w-56 accent-red-600"
+        aria-label="Speed input"
+      />
+    </div>
   )
 }
 
 const CARD = "rounded-3xl border border-zinc-200 bg-white p-8 text-zinc-900 shadow-sm"
+const NOTE = "mt-4 text-center text-xs text-zinc-600"
+const SECTION = "mt-10 text-xs font-medium tracking-wide uppercase opacity-50"
 
 export default function FacesLab() {
   return (
@@ -77,27 +73,71 @@ export default function FacesLab() {
       </h1>
       <LabNav current="/lab/faces" />
       <ScratchNotice />
-      <p className="mt-2 text-[10px] tracking-wide uppercase opacity-40">build 1</p>
+      <p className="mt-2 text-[10px] tracking-wide uppercase opacity-40">build 2</p>
 
-      <h2 className="mt-10 text-xs font-medium tracking-wide uppercase opacity-50">
-        bare mainplate + parts
-      </h2>
+      <h2 className={SECTION}>tier 1 — the zero-props bar</h2>
+      <div className="mt-4 flex flex-wrap items-center gap-8">
+        <div className={CARD}>
+          <Clock className="w-56" />
+          <p className={NOTE}>{"<Clock />"}</p>
+        </div>
+        <div className={CARD}>
+          <Clock second="tick" className="w-56" />
+          <p className={NOTE}>{'<Clock second="tick" /> — watch :59 → :00'}</p>
+        </div>
+        <div className={CARD}>
+          <Gauge value={72} className="w-56" />
+          <p className={NOTE}>{"<Gauge value={72} />"}</p>
+        </div>
+      </div>
+
+      <h2 className={SECTION}>tier 1 — the gauge's own props</h2>
+      <div className="mt-4 flex flex-wrap items-center gap-8">
+        <div className={CARD}>
+          <Gauge value={72} max={220} redline={[180, 220]} label="Speed" className="w-56" />
+          <p className={NOTE}>redline 180–220</p>
+        </div>
+        <div className={CARD}>
+          <Gauge value={64} indicator="sweep" label="Battery" className="w-56" />
+          <p className={NOTE}>{'indicator="sweep"'}</p>
+        </div>
+        <div className={CARD}>
+          <SliderGauge />
+          <p className={NOTE}>controlled — every change glides</p>
+        </div>
+      </div>
+
+      <h2 className={SECTION}>clock props</h2>
+      <div className="mt-4 flex flex-wrap items-center gap-8">
+        <div className={CARD}>
+          <Clock timezone="Asia/Tokyo" ticks="quarters" second="none" className="w-56" />
+          <p className={NOTE}>Tokyo, quarters, no seconds</p>
+        </div>
+        <div className={CARD}>
+          <Clock numerals="none" className="w-56" />
+          <p className={NOTE}>{'numerals="none" — hands reach further'}</p>
+        </div>
+        <div className={CARD}>
+          <Clock time={new Date("2026-01-15T10:09:36Z")} timezone="UTC" className="w-56" />
+          <p className={NOTE}>{"time — the frozen 10:09:36 pose"}</p>
+        </div>
+        <div className={CARD}>
+          <Clock className="w-56">
+            <Hand type="second" variant="line" className="opacity-70" />
+          </Clock>
+          <p className={NOTE}>slot: the seconds hand, restyled</p>
+        </div>
+      </div>
+
+      <h2 className={SECTION}>the bare core</h2>
       <div className="mt-4 flex flex-wrap items-center gap-8">
         <div className={CARD}>
           <SweepFace />
-          <p className="mt-4 text-center text-xs text-zinc-600">sweep</p>
-        </div>
-        <div className={CARD}>
-          <TickFace />
-          <p className="mt-4 text-center text-xs text-zinc-600">tick — watch :59 → :00</p>
+          <p className={NOTE}>Mainplate + parts, sweep</p>
         </div>
         <div className={CARD}>
           <QuartersFace />
-          <p className="mt-4 text-center text-xs text-zinc-600">quarters</p>
-        </div>
-        <div className={CARD}>
-          <NeedleFace />
-          <p className="mt-4 text-center text-xs text-zinc-600">controlled, 270° sweep</p>
+          <p className={NOTE}>Mainplate + parts, quarters</p>
         </div>
       </div>
     </main>

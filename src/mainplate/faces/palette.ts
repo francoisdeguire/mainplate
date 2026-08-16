@@ -38,6 +38,11 @@ export function paletteVars(color: string | undefined): PaletteVars {
     "--mp-ink": ink,
     "--mp-accent":
       color === undefined ? WARM_RED : `oklch(from ${color} 0.62 calc(c * 1.2 + 0.06) h)`,
+    // Spec §6: "the redline keeps its own warning hue". A gauge's warning band
+    // is the one mark on a face that means something rather than shows
+    // something, so it must not follow `color` the way the accent does — a
+    // blue-themed gauge with a blue redline says nothing at all.
+    "--mp-warning": WARM_RED,
     "--mp-dial": `oklch(from ${ink} l c h / 0.05)`,
     "--mp-tick": `oklch(from ${ink} l c h / 0.32)`,
     "--mp-tick-major": `oklch(from ${ink} l c h / 0.78)`,
