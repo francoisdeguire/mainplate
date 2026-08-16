@@ -44,13 +44,34 @@ function cq(u: number, boxW: number): number {
   return boxW === 0 ? 0 : quantize((u / boxW) * 100)
 }
 
-/** A `MarkTransform` as the style every mark shares. */
-function markStyle(t: MarkTransform): CSSProperties {
+/**
+ * The stroke-width floor, as a CSS value: never under one device-independent
+ * pixel, however small the face.
+ *
+ * The Task 10 freeze stress measured why: inside a `size={40}` register on a
+ * `w-56` face a line-variant hand computes to 0.33 CSS px and the browser
+ * resolves it by fading it to nothing — silently, at exactly the sizes real
+ * consumers use. The floor is a `max()` STRING, not a measurement, so it is
+ * deterministic, SSR-byte-identical and quantisation-clean; and it applies to
+ * WIDTHS only — a mark's length keeps the Subdial contract that geometry and
+ * the face shrink together, because a short mark is a design and an invisible
+ * one is a bug.
+ */
+function flooredWidth(widthCqw: number): string {
+  return `max(${widthCqw}cqw, 1px)`
+}
+
+/**
+ * A `MarkTransform` as the style every mark shares. `floorWidth` opts a track
+ * of stroke-like marks into the 1px width floor; a numeral box stays literal —
+ * text is never a stroke, and its metrics belong to the glyph.
+ */
+function markStyle(t: MarkTransform, floorWidth = false): CSSProperties {
   return {
     position: "absolute",
     left: t.left,
     top: t.top,
-    width: `${t.widthCqw}cqw`,
+    width: floorWidth ? flooredWidth(t.widthCqw) : `${t.widthCqw}cqw`,
     height: `${t.heightCqw}cqw`,
     // Translate first, so the rotation happens about the centred mark.
     transform: `translate(-50%, -50%) rotate(${t.rotate}deg)`,
@@ -157,6 +178,15 @@ export type TicksProps = {
   skip?: readonly number[] | ((value: number, mark: TickMark) => boolean)
   /** Distance inward from the outline to the mark's OUTER end, so tracks of different lengths share an edge. @default 4 */
   inset?: number
+  /**
+   * The mark preset this track draws with. `"major"` is the prominent pair —
+   * the hour-marker length and width plus the 78% ramp — applied as DEFAULTS,
+   * so an explicit `length`, `width` or `style` still wins. One word instead
+   * of three restated numbers and an internal palette variable, which is
+   * exactly what every hand-written major track was doing before the Task 10
+   * freeze stress named it. @default "minor"
+   */
+  emphasis?: "minor" | "major"
   /** The mark's extent along its own axis, in dial units. */
   length?: number
   /** The mark's extent across its own axis, in dial units. */
@@ -173,6 +203,12 @@ export type TicksProps = {
    * the same division of labour `<Numerals render>` gets — so a custom mark
    * cannot fall off its ring. The default paint goes with the bar: a custom
    * mark IS the mark, not a decoration on top of one.
+   *
+   * Mind `orient` when the content is TEXT: the `"edge"` default turns the
+   * box with the ring — right for bars and artwork, sideways for a label —
+   * so a labelled track nearly always wants `orient="upright"` stated. The
+   * complex face's register labels are the worked example: they shipped
+   * lying along the ring until the browser pass said so.
    */
   render?: (value: number, mark: TickMark) => ReactNode
 } & Omit<ComponentProps<"div">, "children" | "className">
@@ -230,18 +266,19 @@ function Track({
   to,
   skip,
   inset = TICK_INSET,
+  emphasis = "minor",
   length,
   width,
   orient = "edge",
   startAngle = 0,
   sweepAngle = 360,
-  major = false,
   className,
   style,
   render,
   ...rest
-}: TicksProps & { major?: boolean }) {
+}: TicksProps) {
   const { outline, boxW, boxH, unstyled } = useFaceContext()
+  const major = emphasis === "major"
   const markLength = length ?? (major ? MAJOR_LENGTH : MINOR_LENGTH)
   const markWidth = width ?? (major ? MAJOR_WIDTH : MINOR_WIDTH)
 
@@ -320,7 +357,7 @@ function Track({
             key={mark.index}
             className={className}
             style={{
-              ...markStyle(t),
+              ...markStyle(t, true),
               ...(render === undefined ? undefined : CENTRED),
               ...(unstyled || render !== undefined
                 ? undefined
@@ -352,16 +389,16 @@ function Track({
  *
  * ```tsx
  * <Ticks count={60} skip={(v) => v % 5 === 0} />
- * <Ticks count={12} length={9} width={2.4} style={{ background: "var(--mp-tick-major)" }} />
+ * <Ticks count={12} emphasis="major" />
  * ```
  *
  * — which is what a bare `<Ticks/>` renders, because the default pair below is
- * that composition and nothing else (it reaches its own ramp directly rather
- * than through `style`; a hand-written track says so, since paint is
- * appearance and appearance is `className`/`style` by contract). There is no
- * collision rule to learn, no tier index, and no way for one track to silently
- * swallow another's mark: what is written is what is drawn, in the order it is
- * written.
+ * exactly that composition and nothing else. `emphasis` is the whole of the
+ * prominence vocabulary: before it existed, a hand-written major track had to
+ * restate two private numbers and an internal palette variable (the Task 10
+ * freeze finding). There is no collision rule to learn, no tier index, and no
+ * way for one track to silently swallow another's mark: what is written is
+ * what is drawn, in the order it is written.
  */
 export function Ticks({
   variant = "all",
@@ -395,9 +432,11 @@ export function Ticks({
 
   // The majors first, as the minimal part drew them: they are the marks a
   // consumer's `className` most often means, and DOM order is z-order.
+  // `emphasis` sits after the spread: the pair's major track is major by
+  // definition, whatever rode in on the sugar's shared props.
   return (
     <>
-      <Track count={variant === "quarters" ? 4 : 12} major {...shared} />
+      <Track count={variant === "quarters" ? 4 : 12} {...shared} emphasis="major" />
       {variant === "all" ? <Track count={60} skip={EVERY_FIFTH} {...shared} /> : null}
     </>
   )
@@ -804,7 +843,9 @@ export function Hand({
         position: "absolute",
         left: "50%",
         top: "50%",
-        width: `${cq(width, boxW)}cqw`,
+        // The same 1px floor the marks wear, and the part that motivated it:
+        // a register's line hand computed to a third of a pixel (Task 10).
+        width: flooredWidth(cq(width, boxW)),
         height: `${cq(total, boxW)}cqw`,
         transformOrigin: `50% ${pivot}%`,
         transform: translate,

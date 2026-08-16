@@ -114,19 +114,12 @@ export function ComplexFace({
       />
 
       {/* The classic pair, moved inward under the tachymeter, with the date
-          cut carved out of both tracks. The hour track is the hand-written
-          major track the Task 7 deferral is judged on: length, width and ramp
-          all restated by hand. */}
+          cut carved out of both tracks. The hour track originally restated
+          the major preset by hand — length, width and the internal ramp var —
+          which is the friction that ruled `emphasis` into the API; one word
+          now, and the three restatements are gone. */}
       <Ticks count={60} skip={DATE_CUT} inset={18} data-minute-track="" />
-      <Ticks
-        count={12}
-        skip={[3]}
-        inset={18}
-        length={9}
-        width={2.4}
-        style={{ background: "var(--mp-tick-major)" }}
-        data-hour-track=""
-      />
+      <Ticks count={12} skip={[3]} inset={18} emphasis="major" data-hour-track="" />
 
       {/* Upright where the time is read; 3/6/9 ceded to the complications. */}
       <Numerals inset={36} render={(v) => (DROPPED.has(v) ? null : v)} />

@@ -212,11 +212,12 @@ function SweepFill({
  * the major track stands in it, which is the clock's minute+hour layout with
  * different numbers.
  *
- * The major ramp arrives as `style`, the way `<Gauge>` already dresses its
- * needle: the part's own default is the minor ink, and a face that wants the
- * prominent one says so. `unstyled` is therefore this caller's business too.
+ * The prominent track says `emphasis="major"` — the ramp comes with the word,
+ * `unstyled` is the part's own business through the face context, and the
+ * gauge's ring geometry stays its own: the explicit `length`/`width` beat the
+ * preset, which is the override rule working in the direction it was built for.
  */
-function Graduations({ scale, unstyled }: { scale: Scale; unstyled: boolean }) {
+function Graduations({ scale }: { scale: Scale }) {
   const range = { startAngle: scale.startAngle, sweepAngle: scale.sweepAngle }
   return (
     <>
@@ -230,10 +231,10 @@ function Graduations({ scale, unstyled }: { scale: Scale; unstyled: boolean }) {
       />
       <Ticks
         count={(GRAD_COUNT - 1) / GRAD_MAJOR_EVERY + 1}
+        emphasis="major"
         inset={GRAD_INSET}
         length={GRAD_MAJOR_LENGTH}
         width={GRAD_MAJOR_WIDTH}
-        style={unstyled ? undefined : { background: "var(--mp-tick-major)" }}
         {...range}
       />
     </>
@@ -440,7 +441,7 @@ export function Gauge({
       // once — one `<Ticks>` child is one tick track, whatever it replaces.
       wiring: { startAngle: scale.startAngle, sweepAngle: scale.sweepAngle },
       claims: (el) => el.type === Ticks,
-      node: <Graduations scale={scale} unstyled={unstyled} />,
+      node: <Graduations scale={scale} />,
     })
     slots.push(
       handSlot(

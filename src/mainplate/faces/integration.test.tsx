@@ -409,4 +409,31 @@ describe("the complex face — everything at once", () => {
     expect(count).toBeGreaterThan(100)
     expect(count).toBeLessThanOrEqual(NODE_CEILING)
   })
+
+  it("floors the deeply nested register hand's width — the sub-pixel fix, SSR-visible", () => {
+    const { elapsedSeconds, elapsedMinutes } = counters()
+    const { container } = render(
+      <ComplexFace
+        elapsedSeconds={elapsedSeconds}
+        elapsedMinutes={elapsedMinutes}
+        date={15}
+        timezone="UTC"
+      />,
+    )
+    const h = hands(container)
+    // The line-variant register hand: 1.6 dial units — 0.33px at the lab's
+    // w-56 card before the floor. Now it can never fall under a pixel.
+    expect(h.regSeconds.style.width).toBe("max(0.7273cqw, 1px)")
+    // And the same string is in the server markup — the floor is a
+    // deterministic style value, not a measurement.
+    const html = renderToString(
+      <ComplexFace
+        elapsedSeconds={elapsedSeconds}
+        elapsedMinutes={elapsedMinutes}
+        date={15}
+        timezone="UTC"
+      />,
+    )
+    expect(html).toContain("max(0.7273cqw, 1px)")
+  })
 })

@@ -1361,3 +1361,80 @@ describe("quantisation — every inline style value parses to ≤4dp", () => {
     }
   })
 })
+
+describe("<Ticks> emphasis and the stroke-width floor (the Task 10 freeze fixes)", () => {
+  function ticksOf(container: HTMLElement): HTMLElement[] {
+    return [...container.querySelectorAll<HTMLElement>('[data-mp="tick"]')]
+  }
+
+  it('emphasis="major" draws the major preset: length, width and ramp in one word', () => {
+    const { container } = render(
+      <Mainplate label="x">
+        <Ticks count={12} emphasis="major" />
+      </Mainplate>,
+    )
+    const marks = ticksOf(container)
+    expect(marks).toHaveLength(12)
+    for (const mark of marks) {
+      // MAJOR_LENGTH 9 and MAJOR_WIDTH 2.4 on the 220 box — the exact numbers
+      // the complex face had to restate by hand before this word existed.
+      expect(mark.style.height).toBe("4.0909cqw")
+      expect(mark.style.width).toBe("max(1.0909cqw, 1px)")
+      expect(mark.style.background).toBe("var(--mp-tick-major)")
+    }
+  })
+
+  it("explicit length, width and style still beat the emphasis preset", () => {
+    const { container } = render(
+      <Mainplate label="x">
+        <Ticks count={4} emphasis="major" length={12} width={3} style={{ background: "peru" }} />
+      </Mainplate>,
+    )
+    const mark = ticksOf(container)[0]
+    if (mark === undefined) throw new Error("no mark")
+    expect(mark.style.height).toBe("5.4545cqw")
+    expect(mark.style.width).toBe("max(1.3636cqw, 1px)")
+    expect(mark.style.background).toBe("peru")
+  })
+
+  it("floors every mark and hand WIDTH at 1px; lengths keep the proportional contract", () => {
+    const { container } = render(
+      <Mainplate label="x">
+        <Ticks count={4} />
+        <Numerals variant="quarters" />
+        <Hand value={10} type="minute" />
+      </Mainplate>,
+    )
+    const mark = ticksOf(container)[0]
+    if (mark === undefined) throw new Error("no mark")
+    // MINOR_WIDTH 1.4 — 0.64% of the box, sub-pixel at every small size.
+    expect(mark.style.width).toBe("max(0.6364cqw, 1px)")
+    const hand = handsOf(container)[0]
+    if (hand === undefined) throw new Error("no hand")
+    expect(hand.style.width).toBe("max(2.2727cqw, 1px)")
+    // A numeral box is not a stroke: no floor, so text metrics stay literal.
+    const numeral = numeralsOf(container)[0]
+    if (numeral === undefined) throw new Error("no numeral")
+    expect(numeral.style.width).toBe("11.8182cqw")
+    // The floor is widths-only: no element's HEIGHT ever wears it.
+    for (const el of container.querySelectorAll<HTMLElement>("[style]")) {
+      expect(el.style.height).not.toContain("max(")
+    }
+  })
+
+  it("the default pair is now the one-word composition, geometry unchanged", () => {
+    const { container } = render(
+      <Mainplate label="x">
+        <Ticks />
+      </Mainplate>,
+    )
+    const marks = ticksOf(container)
+    expect(marks).toHaveLength(60)
+    const majors = marks.filter((m) => m.style.background === "var(--mp-tick-major)")
+    expect(majors).toHaveLength(12)
+    const major = majors[0]
+    if (major === undefined) throw new Error("no major")
+    expect(major.style.height).toBe("4.0909cqw")
+    expect(major.style.width).toBe("max(1.0909cqw, 1px)")
+  })
+})
