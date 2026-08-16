@@ -190,6 +190,31 @@ function DiamondTrack() {
   )
 }
 
+/**
+ * `values` — the non-uniform scale. A log-ish instrument: the marks are stated
+ * outright, so they cluster where the domain does. No `count` or `every` can
+ * say this, and populating 1–100 to skip 93 of it is a workaround.
+ */
+function ValuesTrack() {
+  return (
+    <Mainplate label="A non-uniform scale" className="w-56">
+      <Dial />
+      <Ticks
+        values={[1, 2, 5, 10, 20, 50, 100]}
+        from={1}
+        to={100}
+        startAngle={-135}
+        sweepAngle={270}
+        length={9}
+        width={2.4}
+        style={MAJOR_INK}
+      />
+      <Hand value={20} min={1} max={100} startAngle={-135} sweepAngle={270} long />
+      <Cap />
+    </Mainplate>
+  )
+}
+
 /** The frozen 10:09:36 pose — the numeral row is judged on shape, not on time. */
 const POSE = new Date("2026-01-15T10:09:36Z")
 
@@ -205,7 +230,7 @@ export default function FacesLab() {
       </h1>
       <LabNav current="/lab/faces" />
       <ScratchNotice />
-      <p className="mt-2 text-[10px] tracking-wide uppercase opacity-40">build 3</p>
+      <p className="mt-2 text-[10px] tracking-wide uppercase opacity-40">build 4</p>
 
       <h2 className={SECTION}>tier 1 — the zero-props bar</h2>
       <div className="mt-4 flex flex-wrap items-center gap-8">
@@ -320,6 +345,10 @@ export default function FacesLab() {
             <Ticks count={12} length={6} width={1.4} />
           </Gauge>
           <p className={NOTE}>a Ticks child replaces the graduations, keeping the sweep</p>
+        </div>
+        <div className={CARD}>
+          <ValuesTrack />
+          <p className={NOTE}>{"values={[1, 2, 5, 10, 20, 50, 100]} — stated outright"}</p>
         </div>
       </div>
 

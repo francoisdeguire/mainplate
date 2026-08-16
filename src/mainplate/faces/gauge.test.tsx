@@ -410,7 +410,12 @@ describe("<Gauge> — slots", () => {
     // The wrapper's wiring is re-applied over the child's: 50 of 0-100, not
     // 0 of 0-10 (which would park the needle at the start of the sweep).
     expect(rotationOf(needle)).toBe(0)
-    expect(needle.style.height).toBe("41.8182cqw")
+    // The needle reaches the graduations: 83.5 units of reach plus the 12-unit
+    // tail over the 220 box, pivoting 83.5/95.5 of the way up. 83.5 is exactly
+    // where the minor marks' inner ends are (inset 12 + length 4.5 → 100−16.5),
+    // so the tip meets the ring without crossing the majors' inner ends at 80.
+    expect(needle.style.height).toBe("43.4091cqw")
+    expect(needle.style.transformOrigin).toBe("50% 87.4346%")
   })
 })
 

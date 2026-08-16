@@ -136,6 +136,15 @@ export type TicksProps = {
   count?: number
   /** A step in domain units instead of a mark count. Needs `to` — there is no domain to step across without one. */
   every?: number
+  /**
+   * The marks stated outright, one per domain value — the non-uniform scale a
+   * step cannot describe: a tachymeter, a log axis, the three readings that
+   * matter. Mapped through `from`/`to` and the sweep exactly as `count` marks
+   * are; with no `to`, the domain spans the list, so the largest value lands at
+   * the sweep's end (state `to` on a closed ring, or the largest lands back on
+   * the first). Exactly one of `values`, `count` and `every`.
+   */
+  values?: readonly number[]
   /** The domain's lower bound, at the start of the sweep. @default 0 */
   from?: number
   /** The domain's upper bound, at the end of the sweep. @default the one `count` implies */
@@ -173,7 +182,17 @@ const TICK_INSET = 4
 const MAJOR_LENGTH = 9
 const MAJOR_WIDTH = 2.4
 const MINOR_LENGTH = 5
-const MINOR_WIDTH = 1
+/**
+ * 1.4, not 1. A minor mark is one dial unit wide on a 220-unit box — 0.45% of
+ * the container — which at `w-40` is 0.73 CSS pixels and at `w-56` barely one.
+ * Below a pixel the browser resolves the mark by fading it, and the 32% ink
+ * ramp is already the palette's quietest, so the two compound into a track that
+ * reads as dust rather than as marks. The fix is the mark, not the ink: the
+ * ramp values are fixed by the palette (dial 5, tick 32, major 78) and a fourth
+ * alpha would be a new palette decision. Widening keeps the track quiet and
+ * makes it land on whole pixels.
+ */
+const MINOR_WIDTH = 1.4
 
 /** Slack for asking whether a sweep closes on itself — `populate`'s own rule. */
 const CLOSED_ARC_EPSILON = 1e-9
@@ -206,6 +225,7 @@ const CENTRED: CSSProperties = {
 function Track({
   count,
   every,
+  values,
   from = 0,
   to,
   skip,
@@ -225,11 +245,23 @@ function Track({
   const markLength = length ?? (major ? MAJOR_LENGTH : MINOR_LENGTH)
   const markWidth = width ?? (major ? MAJOR_WIDTH : MINOR_WIDTH)
 
-  // `count` beats `every`: two populations would need a precedence rule, and a
-  // precedence rule is a thing to remember. `every` alone cannot be honoured —
-  // a step with no upper bound populates one mark and looks like a bug — so it
-  // takes the library's programmer-error path rather than degrading in silence.
-  if (count === undefined && every !== undefined && to === undefined) {
+  // The three populations are exactly-one-of, the engine's own rule: combining
+  // them would need a precedence order, and a precedence order is a thing to
+  // remember. Stated rather than silently resolved — `failSoft` throws in
+  // development and names the survivor in production.
+  const stated = [values !== undefined, count !== undefined, every !== undefined]
+  if (stated.filter(Boolean).length > 1) {
+    failSoft(
+      "mainplate: <Ticks> takes only one of `values`, `count` or `every` — received " +
+        `${(["values", "count", "every"] as const).filter((_, i) => stated[i]).join(" and ")}.`,
+      "Using `values`, then `count`.",
+    )
+  }
+
+  // `every` alone cannot be honoured — a step with no upper bound populates one
+  // mark and looks like a bug — so it takes the same path rather than degrading
+  // in silence.
+  if (values === undefined && count === undefined && every !== undefined && to === undefined) {
     failSoft(
       `mainplate: <Ticks every={${every}}> needs a domain to step across — give \`to\` ` +
         "(and `from` when it is not 0), or say `count` instead.",
@@ -244,8 +276,17 @@ function Track({
   // MARK, which is the only thing it could sensibly mean. The fencepost is the
   // engine's own: a closed ring drops the mark that would land on the first,
   // an open sweep keeps both its endpoints, so the step is 1 either way.
+  //
+  // A bare `values` list has no step to infer from, so its domain simply spans
+  // the list: the largest value lands at the end of the sweep, which is what an
+  // open scale wants and what `to` is for on a closed one.
   const closed = Math.abs(sweepAngle) >= 360 - CLOSED_ARC_EPSILON
-  const implied = count === undefined ? 1 : Math.max(closed ? count : count - 1, 1)
+  const implied =
+    values !== undefined
+      ? Math.max(from, ...values) - from
+      : count === undefined
+        ? 1
+        : Math.max(closed ? count : count - 1, 1)
   const scale: Scale = { min: from, max: to ?? from + implied, startAngle, sweepAngle }
 
   const skipMarks: Skip | undefined =
@@ -255,9 +296,11 @@ function Track({
   // `<Ticks>` never routes here without a population; the empty tier is the
   // type system's share of that argument rather than a case that happens.
   const input: ResolveInput =
-    count !== undefined
-      ? { count, skip: skipMarks }
-      : { tiers: every === undefined ? [] : [{ every }], skip: skipMarks }
+    values !== undefined
+      ? { ticks: values.map((value) => ({ value })), skip: skipMarks }
+      : count !== undefined
+        ? { count, skip: skipMarks }
+        : { tiers: every === undefined ? [] : [{ every }], skip: skipMarks }
   const marks = resolveTicks(input, scale)
 
   return (
@@ -324,6 +367,7 @@ export function Ticks({
   variant = "all",
   count,
   every,
+  values,
   from,
   to,
   skip,
@@ -333,11 +377,12 @@ export function Ticks({
 }: TicksProps) {
   // Anything that states a population is one explicit track; `variant` is only
   // consulted when nothing does.
-  if (count !== undefined || every !== undefined) {
+  if (count !== undefined || every !== undefined || values !== undefined) {
     return (
       <Track
         count={count}
         every={every}
+        values={values}
         from={from}
         to={to}
         skip={skip}
@@ -558,7 +603,13 @@ const LONG_REACH: Record<HandType | "plain", number> = {
   hour: 54,
   minute: 80,
   second: 86,
-  plain: 80,
+  // The needle's own number, and the one that is not proportional: it is set by
+  // the gauge's graduation ring rather than by the other hands. 83.5 is where
+  // the minor marks' inner ends are (inset 12, length 4.5, on the 100-unit
+  // dial), so the tip meets the ring it reads against instead of stopping a few
+  // units short of it — which browser-read as a needle that was slightly too
+  // small for its face. It stays clear of the majors' inner ends at 80.
+  plain: 83.5,
 }
 
 /**

@@ -385,6 +385,59 @@ describe("<Ticks> — composable tracks", () => {
     ).toThrow(/mainplate:/)
   })
 
+  it("values places exactly the marks it lists, at their own angles", () => {
+    // The non-uniform scale: a tachymeter, a log axis, a face that marks the
+    // three readings that matter. `count` and `every` cannot say this, and
+    // populating the whole domain to skip all but four of it is a workaround.
+    const { container } = render(
+      <Mainplate label="x">
+        <Ticks values={[0, 10, 25, 45]} to={60} />
+      </Mainplate>,
+    )
+    expect(anglesOf(container)).toEqual([0, 60, 150, 270])
+  })
+
+  it("values maps through a bounded sweep like every other population", () => {
+    const { container } = render(
+      <Mainplate label="x">
+        <Ticks values={[0, 50, 100, 150, 220]} to={220} startAngle={-135} sweepAngle={270} />
+      </Mainplate>,
+    )
+    const angles = [...container.querySelectorAll<HTMLElement>('[data-mp="tick"]')].map(rotationOf)
+    expect(angles).toEqual([-135, -73.6364, -12.2727, 49.0909, 135])
+  })
+
+  it("values with no `to` spans the list: the largest lands at the sweep's end", () => {
+    const { container } = render(
+      <Mainplate label="x">
+        <Ticks values={[0, 25, 50]} startAngle={-90} sweepAngle={180} />
+      </Mainplate>,
+    )
+    const angles = [...container.querySelectorAll<HTMLElement>('[data-mp="tick"]')].map(rotationOf)
+    expect(angles).toEqual([-90, 0, 90])
+  })
+
+  it("skip and render compose with values", () => {
+    const { container } = render(
+      <Mainplate label="x">
+        <Ticks values={[0, 10, 25, 45]} to={60} skip={[10]} render={(v) => <span>{v}</span>} />
+      </Mainplate>,
+    )
+    const marks = [...container.querySelectorAll<HTMLElement>('[data-mp="tick"]')]
+    expect(marks.map((m) => m.textContent)).toEqual(["0", "25", "45"])
+    expect(marks.map(rotationOf).map((a) => ((a % 360) + 360) % 360)).toEqual([0, 150, 270])
+  })
+
+  it("values and count together say so rather than picking one quietly", () => {
+    expect(() =>
+      render(
+        <Mainplate label="x">
+          <Ticks values={[0, 1]} count={4} />
+        </Mainplate>,
+      ),
+    ).toThrow(/mainplate:/)
+  })
+
   it("the default variant is those same two tracks, placed by angle", () => {
     // The strengthening this task's placement change earns: on a shaped face,
     // angular placement puts the minute at value 5 exactly under the hour mark
