@@ -7,6 +7,7 @@ import Link from "next/link"
  */
 const ROUTES = [
   { href: "/lab/faces", label: "faces" },
+  { href: "/lab/complex", label: "complex" },
   { href: "/lab/html", label: "html" },
   { href: "/lab/spike", label: "spike" },
 ] as const
