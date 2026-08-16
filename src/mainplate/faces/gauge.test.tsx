@@ -4,6 +4,7 @@ import { Profiler } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { createSource } from "../core/source"
 import { Clock } from "./clock"
+import { Complication } from "./complication"
 import { Gauge } from "./gauge"
 import { Hand, Ticks } from "./parts"
 
@@ -364,6 +365,54 @@ describe("<Gauge> — the readout", () => {
   it("format={false} hides it", () => {
     const { container } = render(<Gauge value={72.4} format={false} />)
     expect(container.querySelectorAll('[data-mp="readout"]')).toHaveLength(0)
+  })
+
+  it("a composed Complication supersedes it: sweep mode renders ONE reading (spec §6)", () => {
+    // The spec's own §2 example: a digital readout inside an analog gauge.
+    // Without the supersession this paints the consumer's reading on top of
+    // the default one, both centred.
+    const { container, getByText } = render(
+      <Gauge value={64} indicator="sweep">
+        <Gauge.Complication at="center">
+          <span>64%</span>
+        </Gauge.Complication>
+      </Gauge>,
+    )
+    expect(container.querySelectorAll('[data-mp="readout"]')).toHaveLength(0)
+    expect(getByText("64%")).toBeTruthy()
+  })
+
+  it("a composed Complication supersedes it: needle mode too", () => {
+    const { container, getByText } = render(
+      <Gauge value={72} max={220}>
+        <Complication at="center">
+          <span>72 km/h</span>
+        </Complication>
+      </Gauge>,
+    )
+    expect(container.querySelectorAll('[data-mp="readout"]')).toHaveLength(0)
+    expect(getByText("72 km/h")).toBeTruthy()
+  })
+
+  it("ANY composed Complication supersedes — position and an explicit format do not matter", () => {
+    // Per the spec's wording ("a Complication supersedes it when composed"),
+    // not per collision: composing content at 9h still hands the reading's
+    // presentation to the consumer, even with a formatter stated.
+    const { container } = render(
+      <Gauge value={72} max={220} format={(v) => `${v} km/h`}>
+        <Complication at="9h" inset={30}>
+          <span>fuel</span>
+        </Complication>
+      </Gauge>,
+    )
+    expect(container.querySelectorAll('[data-mp="readout"]')).toHaveLength(0)
+  })
+
+  it("negative control: the bare gauge keeps its readout in both modes", () => {
+    const needle = render(<Gauge value={72} max={220} />)
+    expect(needle.container.querySelectorAll('[data-mp="readout"]')).toHaveLength(1)
+    const sweep = render(<Gauge value={64} indicator="sweep" />)
+    expect(sweep.container.querySelectorAll('[data-mp="readout"]')).toHaveLength(1)
   })
 
   it("keeps a live readout fresh through the ref, at zero commits", () => {

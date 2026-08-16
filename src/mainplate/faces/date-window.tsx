@@ -1,35 +1,19 @@
 "use client"
 
 /**
- * The animated date window — LAB code, not library API.
+ * The animated date window — INTERNAL, not tier-1 API (not in the barrel).
+ * May import: faces/*. Composed by the lab pages and Task 10's complex face,
+ * always inside a content-mode `<Complication>`.
  *
  * A rolling number in an overflow-hidden window: on a value change the old
  * digit slides out upward and the new one slides in from below, one CSS
  * transition on translateY (~200ms, strong ease-out — a mechanical date disc
  * clicking over). Reduced motion swaps instantly. Minimal-Swiss: ink on
- * light, tabular digits, a hairline frame. Sized in cqw so it lives on a
- * face, inside a content-mode `<Complication>`.
+ * light, tabular digits, a hairline frame. Sized in cqw so it scales with
+ * the face it sits on.
  */
-import { type CSSProperties, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react"
-
-const REDUCED_MOTION = "(prefers-reduced-motion: reduce)"
-
-function subscribeMotion(onChange: () => void): () => void {
-  if (typeof matchMedia === "undefined") return () => {}
-  const mql = matchMedia(REDUCED_MOTION)
-  if (typeof mql.addEventListener !== "function") return () => {}
-  mql.addEventListener("change", onChange)
-  return () => mql.removeEventListener("change", onChange)
-}
-
-function readMotion(): boolean {
-  return typeof matchMedia === "undefined" ? false : matchMedia(REDUCED_MOTION).matches
-}
-
-/** Lab-local twin of the library's private hook — the lab imports the barrel only. */
-function usePrefersReducedMotion(): boolean {
-  return useSyncExternalStore(subscribeMotion, readMotion, () => false)
-}
+import { type CSSProperties, useLayoutEffect, useRef, useState } from "react"
+import { usePrefersReducedMotion } from "./face"
 
 /** ~200ms, fast out and a soft landing — the disc clicks, it does not drift. */
 const ROLL = "transform 200ms cubic-bezier(0.16, 1, 0.3, 1)"
@@ -101,7 +85,7 @@ export function DateWindow({ value }: { value: number }) {
 
   return (
     <div style={WINDOW}>
-      <div ref={track} data-lab="date-track">
+      <div ref={track} data-mp="date-track">
         {shown.prev !== null && (
           <div key={`out:${shown.prev}`} style={ROW}>
             {shown.prev}

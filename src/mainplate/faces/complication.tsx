@@ -14,17 +14,17 @@
  *   dropped inside still pivots on the OUTER dial. Positioning content is not
  *   a new face.
  *
- * - **Context mode** (`size` given, in the parent's dial units): the legacy
- *   `<Subdial>` semantics, reborn in HTML. The element becomes a fresh face
- *   box — its own inline-size container, sized so that nominal dial radius
- *   100 inside means `size` parent units — and `FaceContext` is re-established
- *   over a nominal circle. Every part works inside unchanged, because to a
- *   part this box is indistinguishable from a root face: same outline shape,
- *   same 220-unit box, same cqw arithmetic against its own (now smaller)
- *   container. The rescale is the CONTAINER's, never the parts': where the
- *   SVG subdial wrote one `scale(r/100)` on a `<g>`, this writes one
- *   `width/height` in the parent's cqw and lets container-query units do the
- *   dividing.
+ * - **Context mode** (`size` given — the nested dial's DIAMETER, in the
+ *   parent's dial units): the legacy `<Subdial>` semantics, reborn in HTML.
+ *   The element becomes a fresh face box — its own inline-size container,
+ *   sized so that the nominal 200-unit dial diameter inside means `size`
+ *   parent units — and `FaceContext` is re-established over a nominal circle.
+ *   Every part works inside unchanged, because to a part this box is
+ *   indistinguishable from a root face: same outline shape, same 220-unit
+ *   box, same cqw arithmetic against its own (now smaller) container. The
+ *   rescale is the CONTAINER's, never the parts': where the SVG subdial wrote
+ *   one `scale(r/100)` on a `<g>`, this writes one `width/height` in the
+ *   parent's cqw and lets container-query units do the dividing.
  *
  * Two things deliberately do NOT re-establish:
  *
@@ -71,10 +71,12 @@ export type ComplicationProps = {
    */
   inset?: DialUnits
   /**
-   * Give the complication a face of its own: the nested dial's radius, in the
-   * PARENT's dial units. Omitted, the children are positioned content on the
-   * outer face; given, they render inside a fresh scaled context where dial
-   * radius 100 means this many parent units — the `<Subdial>` semantics.
+   * Give the complication a face of its own: the nested dial's DIAMETER, in
+   * the PARENT's dial units — a `size={30}` register spans 30 units of the
+   * face it sits on, the way anyone eyeballs one. Omitted, the children are
+   * positioned content on the outer face; given, they render inside a fresh
+   * scaled context where the nominal 200-unit dial diameter means this many
+   * parent units — the `<Subdial>` scaling, restated over a diameter.
    */
   size?: DialUnits
   className?: string
@@ -152,11 +154,14 @@ export function Complication({
   }
 
   // The rescale, in full: the nested face box (its own dial units), times the
-  // scale `size` names, expressed as cqw of the PARENT's box. On a circle in
-  // a circle the arithmetic collapses to exactly `size` cqw — the nominal
-  // boxes agree — but it is written out so a future nested shape cannot
-  // silently inherit the collapse.
-  const scale = size / DIAL_RADIUS
+  // scale `size` names — diameter over the nominal 200-unit diameter —
+  // expressed as cqw of the PARENT's box. On a circle in a circle the
+  // arithmetic collapses to exactly `size / 2` cqw — the nominal boxes agree —
+  // but it is written out so a future nested shape cannot silently inherit
+  // the collapse. Both extents divide by the parent's WIDTH: cqw is
+  // width-based by definition, and boxH here would stretch a register on
+  // every shaped face.
+  const scale = size / (2 * DIAL_RADIUS)
   const w = outer.boxW === 0 ? 0 : quantize((nested.boxW * scale * 100) / outer.boxW)
   const h = outer.boxW === 0 ? 0 : quantize((nested.boxH * scale * 100) / outer.boxW)
 

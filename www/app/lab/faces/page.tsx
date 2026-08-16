@@ -20,9 +20,9 @@ import {
   Numerals,
   Ticks,
 } from "@/mainplate/faces"
+import { DateWindow } from "@/mainplate/faces/date-window"
 import { useWatchSource } from "@/mainplate/time"
 import { LabNav, ScratchNotice } from "../nav"
-import { DateWindow } from "./date-window"
 
 /** The zero-composition target: dial, ticks, three hands, cap — all live. */
 function SweepFace() {
@@ -278,16 +278,17 @@ function DateWindowClock() {
 
 /**
  * Context mode: a running-seconds register at 6 — the chronograph layout,
- * zero additional API. `size={26}` re-establishes the face inside, so the
- * register's ticks, hairline hand and cap are the SAME parts, reading a
- * fresh centre where dial-unit 100 means 26 parent units.
+ * zero additional API. `size={52}` (the register dial's diameter, in parent
+ * units) re-establishes the face inside, so the register's ticks, hairline
+ * hand and cap are the SAME parts, reading a fresh centre where the nominal
+ * 200-unit dial spans 52 parent units.
  */
 function RegisterClock() {
   const clock = useWatchSource()
   return (
     <Clock second="none" numerals="none" label="Clock with a seconds register" className="w-56">
-      <Complication at="6h" inset={36} size={26}>
-        {/* Chunkier than a root face's marks: the register is 26 parent units
+      <Complication at="6h" inset={36} size={52}>
+        {/* Chunkier than a root face's marks: the register is 52 parent units
             across, so dial-unit strokes come out proportionally finer (the
             Subdial contract) — at w-56 a default mark is sub-pixel. */}
         <Ticks count={12} length={9} width={3.5} style={MAJOR_INK} />
@@ -449,7 +450,7 @@ export default function FacesLab() {
         </div>
         <div className={CARD}>
           <RegisterClock />
-          <p className={NOTE}>{'context mode: size={26} at "6h" — the same parts, re-based'}</p>
+          <p className={NOTE}>{'context mode: size={52} at "6h" — the same parts, re-based'}</p>
         </div>
       </div>
 

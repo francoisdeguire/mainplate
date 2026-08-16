@@ -158,11 +158,22 @@ describe("a nested live face on the server", () => {
     }
 
     // The context re-establishment is visible in the markup: the root and
-    // each sized complication are containers, and the boxes are the parent's
-    // dial units as cqw. Content mode adds no third container.
+    // each sized complication are containers, and each box is size/2 cqw of
+    // its parent (`size` is the nested dial's diameter). Content mode's
+    // no-container claim is pinned in complication.test.tsx.
     expect(first.match(/container-type:inline-size/g)).toHaveLength(3)
-    expect(first).toContain("width:30cqw")
-    expect(first).toContain("width:26cqw")
+    expect(first).toContain("width:15cqw")
+    expect(first).toContain("width:13cqw")
+  })
+
+  it("the internal date window imports and renders on the server", async () => {
+    // Not tier-1 API — an internal module the lab (and Task 10) compose — but
+    // the module-scope rule binds every module: no DOM touch on import, and a
+    // deterministic first render (the roll only ever starts on the client).
+    const { DateWindow } = await import("./date-window")
+    const html = renderToString(<DateWindow value={14} />)
+    expect(html).toContain(">14<")
+    expect(html).not.toContain("translateY")
   })
 })
 

@@ -31,7 +31,7 @@ import {
   valueToAngle,
 } from "../core"
 import { Complication } from "./complication"
-import { Face, type FaceSlot, handSlot, partSlot, usePrefersReducedMotion } from "./face"
+import { composes, Face, type FaceSlot, handSlot, partSlot, usePrefersReducedMotion } from "./face"
 import { useFaceContext } from "./mainplate"
 import { Cap, Dial, Hand, STEP_EASE, Ticks } from "./parts"
 
@@ -84,7 +84,12 @@ export type GaugeProps = {
    * the minimum to the value — the progress-ring mode. @default "hand"
    */
   indicator?: "hand" | "sweep"
-  /** The readout under the pivot. A function formats; `false` hides it. @default the rounded value */
+  /**
+   * The bare-mode readout under the pivot. A function formats; `false` hides
+   * it; a composed `<Complication>` supersedes it entirely (spec §6) — the
+   * consumer's content becomes the reading's presentation.
+   * @default the rounded value
+   */
   format?: false | ((value: number) => string)
   /** One CSS color; the whole palette derives from it in CSS. @default the inherited `currentColor` */
   color?: string
@@ -478,7 +483,13 @@ export function Gauge({
       partSlot("cap", <Cap style={unstyled ? undefined : { background: "var(--mp-ink)" }} />, true),
     )
   }
-  if (format !== false) {
+  // Spec §6: the readout is the BARE-mode reading — a composed Complication
+  // supersedes it, wherever the consumer put one. ANY Complication, not only
+  // a central one, per the spec's wording: composing content hands the
+  // reading's presentation to the consumer outright, and a position test
+  // would quietly double-print at "center" the moment it mis-measured.
+  // `format={false}` still hides the readout with nothing composed.
+  if (format !== false && !composes(children, Complication)) {
     slots.push({
       key: "readout",
       wiring: {},

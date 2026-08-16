@@ -5,7 +5,7 @@ import { createSource, type Source } from "../core/source"
 import { Clock } from "./clock"
 import { Complication } from "./complication"
 import { Mainplate } from "./mainplate"
-import { Hand, Ticks } from "./parts"
+import { Cap, Dial, Hand, Ticks } from "./parts"
 
 /**
  * `<Complication>` — the dual-nature component, both halves pinned.
@@ -215,18 +215,52 @@ describe("<Complication> — content mode positions on the outer face", () => {
 })
 
 describe("<Complication size> — context mode re-establishes the face", () => {
-  it("sizes the box from `size`, in parent dial units", () => {
+  it("sizes the box from `size` — the nested dial's DIAMETER, in parent dial units", () => {
     const { container } = render(
       <Mainplate>
         <Complication at="6h" size={30} />
       </Mainplate>,
     )
     const comp = complicationOf(container)
-    // The nested face box is the nominal 220-unit circle box scaled by
-    // size/100 — 66 parent units — which on the parent's own 220 box is
-    // exactly `size` cqw. The round number is the invariant, not a fluke.
-    expect(comp.style.width).toBe("30cqw")
-    expect(comp.style.height).toBe("30cqw")
+    // `size` is the dial's diameter: the nested 220-unit box scaled by
+    // size/200 is 33 parent units, which on the parent's own 220 box is
+    // exactly `size / 2` cqw. The round number is the invariant, not a fluke.
+    expect(comp.style.width).toBe("15cqw")
+    expect(comp.style.height).toBe("15cqw")
+  })
+
+  it("keeps width === height on a RECT parent — both cqw scale by the parent's WIDTH", () => {
+    // The one place the two denominators diverge: a rect face's boxH (184)
+    // is not its boxW (220). cqw is width-based by definition, so a square
+    // register must come out square here too — dividing the height by boxH
+    // would stretch it 220/184 and only ever on a shaped face.
+    const { container } = render(
+      <Mainplate shape={{ ratio: 0.82, radius: 30 }}>
+        <Complication at="center" size={30} />
+      </Mainplate>,
+    )
+    const comp = complicationOf(container)
+    expect(comp.style.width).toBe("15cqw")
+    expect(comp.style.height).toBe("15cqw")
+  })
+
+  it("threads `unstyled` into the nested face: a register paints nothing", () => {
+    const { container } = render(
+      <Mainplate unstyled>
+        <Complication at="center" size={60}>
+          <Dial />
+          <Ticks count={4} />
+          <Hand value={15} />
+          <Cap />
+        </Complication>
+      </Mainplate>,
+    )
+    const comp = complicationOf(container)
+    const parts = [...comp.querySelectorAll<HTMLElement>("[data-mp]")]
+    expect(parts.length).toBe(7) // dial, four ticks, hand, cap
+    for (const part of parts) {
+      expect(part.style.background, part.getAttribute("style") ?? "").toBe("")
+    }
   })
 
   it("keeps every tick of a nested track inside the complication's own box", () => {
@@ -243,11 +277,12 @@ describe("<Complication size> — context mode re-establishes the face", () => {
     const w = cqw(comp.style.width)
     const h = cqw(comp.style.height)
 
-    // The bounds come from the PROPS, not from the rendered box: size 30 on
-    // the 220-unit parent is ±15 of the parent's width around the resolved
-    // point. Skipping the rescale inflates the rendered box and pushes the
-    // marks outside these prop-derived bounds — the mutation this test reds on.
-    const half = 15
+    // The bounds come from the PROPS, not from the rendered box: a size-30
+    // (diameter) register on the 220-unit parent is ±7.5 of the parent's
+    // width around the resolved point. Skipping the rescale inflates the
+    // rendered box and pushes the marks outside these prop-derived bounds —
+    // the mutation this test reds on.
+    const half = 7.5
     expect(cx).toBe(50)
     expect(cy).toBe(95.4545)
 
@@ -309,10 +344,11 @@ describe("<Complication size> — context mode re-establishes the face", () => {
     const inner = comps[1]
     if (inner === undefined) throw new Error("no inner complication")
     // Positioned in the MIDDLE face's units — the same 3h percentage a root
-    // face resolves — and sized in ITS dial units: 40 of the nominal 100.
+    // face resolves — and sized in ITS dial units: a 40-diameter register on
+    // the nominal 200-diameter dial.
     expect(inner.style.left).toBe("95.4545%")
     expect(inner.style.top).toBe("50%")
-    expect(inner.style.width).toBe("40cqw")
+    expect(inner.style.width).toBe("20cqw")
 
     const reference = render(
       <Mainplate>

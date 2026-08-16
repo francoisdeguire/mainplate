@@ -145,6 +145,23 @@ function flatten(children: ReactNode, prefix: string, out: ReactNode[]): void {
 }
 
 /**
+ * Does the children tree contain an element of `type`, fragments opened
+ * exactly as `composeSlots` will open them?
+ *
+ * How a wrapper asks whether one of its own defaults has been superseded by
+ * composition — spec §6's readout rule: a `<Complication>` anywhere among a
+ * gauge's children takes over the reading's presentation, so the default
+ * readout must not also paint. A separate walk rather than a slot, because
+ * the question is about a default's *existence* and slots by contract decide
+ * only appearance.
+ */
+export function composes(children: ReactNode, type: unknown): boolean {
+  const kids: ReactNode[] = []
+  flatten(children, "", kids)
+  return kids.some((kid) => isValidElement(kid) && kid.type === type)
+}
+
+/**
  * Slots in their canonical order, each either the default part or the child
  * that claimed it, then every child that claimed nothing, then the slots that
  * asked to stay on top.

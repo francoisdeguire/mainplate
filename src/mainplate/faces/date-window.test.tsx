@@ -1,13 +1,13 @@
 // @vitest-environment jsdom
 import { act, render } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { DateWindow } from "../../../www/app/lab/faces/date-window"
+import { DateWindow } from "./date-window"
 
 /**
- * The animated date window is LAB code — a demo composition, not library API —
- * but its motion contract is worth pinning: the roll is a CSS transition on
- * translateY (~200ms, strong ease-out), and reduced motion swaps instantly.
- * The test lives here because the lab carries no test runner of its own.
+ * The animated date window is an INTERNAL module — a composition the lab and
+ * the complex face reuse, not tier-1 API — but its motion contract is worth
+ * pinning: the roll is a CSS transition on translateY (~200ms, strong
+ * ease-out), and reduced motion swaps instantly.
  */
 
 beforeEach(() => {
@@ -20,7 +20,7 @@ afterEach(() => {
 })
 
 function trackOf(container: ParentNode): HTMLElement {
-  const el = container.querySelector<HTMLElement>('[data-lab="date-track"]')
+  const el = container.querySelector<HTMLElement>('[data-mp="date-track"]')
   if (el === null) throw new Error("no date track")
   return el
 }
