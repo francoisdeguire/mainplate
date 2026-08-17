@@ -466,6 +466,40 @@ describe("<Gauge> — slots", () => {
     expect(needle.style.height).toBe("43.4091cqw")
     expect(needle.style.transformOrigin).toBe("50% 87.4346%")
   })
+
+  it("the needle sweeps OVER a free-child complication; the cap stays topmost", () => {
+    // A needle is a hand, so it obeys the same stacking a clock's hands do:
+    // the trip meter a consumer hangs at 6h is dial furniture the needle
+    // passes over, not a lid that swallows it.
+    const { container } = render(
+      <Gauge value={72} max={220}>
+        <Complication at="6h" inset={30}>
+          <span>trip</span>
+        </Complication>
+      </Gauge>,
+    )
+    const order = [...container.querySelectorAll<HTMLElement>("[data-mp]")].map(
+      (el) => el.dataset.mp,
+    )
+    const comp = order.indexOf("complication")
+    const hand = order.indexOf("hand")
+    const cap = order.indexOf("cap")
+    expect(comp).toBeGreaterThan(order.indexOf("dial"))
+    expect(comp).toBeLessThan(hand)
+    expect(hand).toBeLessThan(cap)
+    expect(cap).toBe(order.length - 1)
+  })
+
+  it("the needle passes over the bare readout too — it is dial furniture", () => {
+    // The same rule reaching the gauge's OWN complication-equivalent: the
+    // readout is a number printed on the dial, not a lid over the movement.
+    const { container } = render(<Gauge value={72} max={220} />)
+    const order = [...container.querySelectorAll<HTMLElement>("[data-mp]")].map(
+      (el) => el.dataset.mp,
+    )
+    expect(order.indexOf("readout")).toBeLessThan(order.indexOf("hand"))
+    expect(order[order.length - 1]).toBe("cap")
+  })
 })
 
 describe("quantisation — every value the two faces write parses to ≤4dp", () => {

@@ -37,6 +37,15 @@ import { Hand, type HandProps, type HandType } from "./parts"
 /** A child element, as this module has to inspect one. */
 type AnyElement = ReactElement<Record<string, unknown>>
 
+/**
+ * Which stacking band a slot renders in, relative to the free children.
+ *
+ * Three bands, because a watch has three: the dial furniture a consumer's
+ * content sits on top of (`undefined`), the hands that sweep over that content
+ * (`"over"`), and the pivot cover that covers everything (`"top"`).
+ */
+export type SlotBand = "over" | "top"
+
 /** One replaceable position on a face. */
 export type FaceSlot = {
   /** Stable identity — also the React key, so composition never keys on index. */
@@ -66,11 +75,17 @@ export type FaceSlot = {
   /** The default part, built from the same `wiring` — so the two cannot drift. */
   node: ReactNode
   /**
-   * Render after the free children rather than before them. The cap wears it:
-   * the pivot cover is the face's topmost element by definition, and content a
-   * consumer adds must not paint over it.
+   * Render after the free children rather than before them. Omitted, the slot
+   * is dial furniture and a consumer's content covers it — which is what
+   * content added to a face is for.
+   *
+   * Two slots ask for more. Hands take `"over"`: horologically a hand sweeps
+   * across the complications it passes, never under them, so a date window at
+   * 6 o'clock must not swallow the minute hand at half past. The cap takes
+   * `"top"`: the pivot cover is the face's topmost element by definition, and
+   * it caps the hands too.
    */
-  top?: boolean
+  band?: SlotBand
 }
 
 /** What a wrapper owns about a hand: the reading and the domain it maps through. */
@@ -108,6 +123,9 @@ export function handSlot(
     // The default is built from the same wiring the replacement is re-wired
     // with, so a slot and its default cannot disagree about the reading.
     node: <Hand {...look} {...wiring} />,
+    // Every hand on either face is built here, so stating the band once is
+    // enough to give a gauge's needle the clock's stacking for free.
+    band: "over",
   }
 }
 
@@ -115,8 +133,8 @@ export function handSlot(
  * A part slot with no wiring at all — dial, ticks, cap. The claim is read off
  * the default node's own component, so naming the part twice is impossible.
  */
-export function partSlot(key: string, node: ReactElement, top?: boolean): FaceSlot {
-  return { key, wiring: {}, claims: (el) => el.type === node.type, node, top }
+export function partSlot(key: string, node: ReactElement, band?: SlotBand): FaceSlot {
+  return { key, wiring: {}, claims: (el) => el.type === node.type, node, band }
 }
 
 /**
@@ -163,15 +181,17 @@ export function composes(children: ReactNode, type: unknown): boolean {
 
 /**
  * Slots in their canonical order, each either the default part or the child
- * that claimed it, then every child that claimed nothing, then the slots that
- * asked to stay on top.
+ * that claimed it, interleaved with the children that claimed nothing at the
+ * band each slot asked for.
  *
- * Order is the z-order — dial under ticks under hands under cap — so a
- * replacement renders *where its slot was*, not where the caller wrote it. A
- * seconds hand restyled through a slot must not suddenly paint over the cap.
- * Free children go above the face's own marks, which is where added content
- * belongs — but below the cap, because the pivot cover is the topmost thing a
- * face has and a second hand pivoting under it would otherwise cover it.
+ * Order is the z-order, and the z-order is the watch's: **dial furniture,
+ * then the free children, then the hands, then the cap.** A replacement
+ * renders *where its slot was*, not where the caller wrote it — a seconds hand
+ * restyled through a slot must not suddenly paint over the cap. Free children
+ * go above the face's own marks, which is where added content belongs, and
+ * below the hands, because that is where a real complication sits: the minute
+ * hand crosses the 6 o'clock subdial, the subdial does not crop the hand. The
+ * cap tops all of it, being the pivot cover.
  *
  * A slot takes the FIRST child that claims it and no more (`!claimed.has`),
  * so `<Clock><Hand type="hour"/><Hand type="hour" value={elsewhere}/></Clock>`
@@ -202,11 +222,10 @@ function composeSlots(slots: FaceSlot[], children: ReactNode): ReactNode[] {
     return isValidElement(s.node) ? cloneElement(s.node, { key: s.key }) : s.node
   }
 
-  return [
-    ...slots.filter((s) => s.top !== true).map(fill),
-    ...extras,
-    ...slots.filter((s) => s.top === true).map(fill),
-  ]
+  // One pass per band, each keeping the slots' declared order inside it — so
+  // the hands still stack hour, minute, second among themselves.
+  const inBand = (band: SlotBand | undefined) => slots.filter((s) => s.band === band).map(fill)
+  return [...inBand(undefined), ...extras, ...inBand("over"), ...inBand("top")]
 }
 
 export type FaceProps = {

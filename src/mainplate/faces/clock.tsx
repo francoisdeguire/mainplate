@@ -98,8 +98,9 @@ function ClockFace({
       ),
     )
   }
-  // `top`: the pivot cover stays above anything a consumer adds.
-  slots.push(partSlot("cap", <Cap />, true))
+  // `"top"`: the pivot cover stays above anything a consumer adds — and above
+  // the hands, which are themselves above what a consumer adds.
+  slots.push(partSlot("cap", <Cap />, "top"))
 
   return (
     <Face slots={slots} {...root}>

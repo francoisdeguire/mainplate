@@ -394,7 +394,7 @@ describe("<Complication size> — context mode re-establishes the face", () => {
 })
 
 describe("<Complication> inside the tier-1 wrappers", () => {
-  it("is a free child — never claimed — above the parts and BELOW the cap", () => {
+  it("is a free child — never claimed — over the dial furniture, UNDER the hands", () => {
     const { container } = render(
       <Clock time={POSE} timezone="UTC">
         <Complication at="center">
@@ -407,9 +407,19 @@ describe("<Complication> inside the tier-1 wrappers", () => {
     )
     const comp = order.indexOf("complication")
     const cap = order.indexOf("cap")
-    const lastHand = order.lastIndexOf("hand")
-    expect(comp).toBeGreaterThan(lastHand)
-    expect(comp).toBeLessThan(cap)
+    const firstHand = order.indexOf("hand")
+    const lastFurniture = Math.max(
+      order.lastIndexOf("dial"),
+      order.lastIndexOf("tick"),
+      order.lastIndexOf("numeral"),
+    )
+    // The stacking a watch actually has, bottom to top: dial furniture, then
+    // whatever the consumer added, then the hands sweeping OVER it, then the
+    // pivot cover. A minute hand passing 6 o'clock is never occluded by the
+    // complication sitting there.
+    expect(comp).toBeGreaterThan(lastFurniture)
+    expect(comp).toBeLessThan(firstHand)
+    expect(order.lastIndexOf("hand")).toBeLessThan(cap)
     expect(cap).toBe(order.length - 1)
   })
 

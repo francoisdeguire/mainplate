@@ -359,7 +359,10 @@ describe("<Clock> — slots replace appearance, never the reading", () => {
     )
     const hands = handsOf(container)
     expect(hands).toHaveLength(4)
-    const [claimed, minute, second, free] = hands
+    // DOM order is the face's z-order, and a free child renders in the free
+    // band — under the clock's own hands, which is why the free hand comes
+    // first here even though it was written second.
+    const [free, claimed, minute, second] = hands
     if (
       claimed === undefined ||
       minute === undefined ||
@@ -410,17 +413,20 @@ describe("<Clock> — slots replace appearance, never the reading", () => {
     const { container } = render(<DualTime />)
     const hands = handsOf(container)
     expect(hands).toHaveLength(4)
-    // 03:30 UTC is 04:30 in Zurich (CET, January): 105° and 135°.
-    expect(hands.map(rotationOf)).toEqual([105, 180, 0, 135])
-    expect(hands.map((h) => h.className)).toEqual(["local", "", "", "zurich"])
+    // 03:30 UTC is 04:30 in Zurich (CET, January): 105° and 135°. The free
+    // second-zone hand renders FIRST — free children stack under the face's
+    // own hands, which is how a GMT watch is built: the 24-hour hand runs
+    // beneath the local pair rather than over them.
+    expect(hands.map(rotationOf)).toEqual([135, 105, 180, 0])
+    expect(hands.map((h) => h.className)).toEqual(["zurich", "local", "", ""])
     // Both hour hands are live, each on its own engine feed.
     fireFrame(3_600_000)
     const moved = hands.map(rotationOf)
-    expect(moved[0]).toBe(135)
-    expect(moved[3]).toBe(165)
+    expect(moved[1]).toBe(135)
+    expect(moved[0]).toBe(165)
   })
 
-  it("free children render BELOW the cap — the cap is the face's topmost element", () => {
+  it("free children render UNDER the hands, and the cap over everything", () => {
     const { container } = render(
       <Clock timezone="UTC">
         <span data-testid="extra" />
@@ -430,10 +436,16 @@ describe("<Clock> — slots replace appearance, never the reading", () => {
     const root = container.querySelector<HTMLElement>('[role="img"]')
     if (root === null) throw new Error("no face root")
     const kids = [...root.children]
+    const extra = kids.findIndex((el) => el.getAttribute("data-testid") === "extra")
+    const firstHand = kids.findIndex((el) => el.getAttribute("data-mp") === "hand")
     const last = kids[kids.length - 1]
     if (last === undefined) throw new Error("empty face")
-    // DOM order IS z-order on this layer: the pivot cover cannot be painted
-    // over by content a consumer added.
+    // DOM order IS z-order on this layer. Content a consumer adds lies on the
+    // dial, the hands sweep over it — a hand occluded by the thing it points
+    // at is the one arrangement a watch never has — and the pivot cover
+    // cannot be painted over by any of it.
+    expect(extra).toBeGreaterThanOrEqual(0)
+    expect(extra).toBeLessThan(firstHand)
     expect(last.getAttribute("data-mp")).toBe("cap")
   })
 
