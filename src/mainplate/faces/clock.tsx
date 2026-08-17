@@ -48,7 +48,7 @@ export type ClockProps = {
   numerals?: NumeralVariant | "none"
   /** `"all"` is the minute track with hour majors; `"quarters"` keeps 12/3/6/9. @default "all" */
   ticks?: "all" | "quarters" | "none"
-  /** Face shape. Circle-only rendering until the shape task; passed through today. @default "circle" */
+  /** Face shape. Passed through to the outline engine on `<Mainplate>`. @default "circle" */
   shape?: FaceShape
   /** Accessible name. Static — §14.1 forbids announcing the time. @default "Analog clock" */
   label?: string
