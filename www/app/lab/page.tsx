@@ -1,18 +1,16 @@
 import { LabNav, ScratchNotice } from "./nav"
 
 /**
- * The lab index. Nothing renders here any more: the primitive-era exploration
- * pages went with the SVG examples, and what is left is the two HTML
- * prototypes the face layer is being built from — both scratch, both deleted
- * once `faces/` ships.
+ * The lab index. Nothing renders here: the primitive-era exploration pages
+ * went with the SVG examples and the two HTML prototypes went once `faces/`
+ * shipped. What is left is the three faces-era routes below — scratch, not
+ * documentation.
  */
 export default function Lab() {
   return (
     <main className="mx-auto max-w-6xl p-8">
       <h1 className="text-sm font-medium tracking-wide uppercase opacity-60">mainplate lab</h1>
-      <p className="mt-2 text-sm opacity-60">
-        Dev harness. Faces render here as the HTML layer lands.
-      </p>
+      <p className="mt-2 text-sm opacity-60">Dev harness. The faces render on the routes below.</p>
       <LabNav current="/lab" />
       <ScratchNotice />
     </main>

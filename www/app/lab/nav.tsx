@@ -9,8 +9,6 @@ const ROUTES = [
   { href: "/lab/faces", label: "faces" },
   { href: "/lab/complex", label: "complex" },
   { href: "/lab/meridian", label: "meridian" },
-  { href: "/lab/html", label: "html" },
-  { href: "/lab/spike", label: "spike" },
 ] as const
 
 export function LabNav({ current }: { current: string }) {
